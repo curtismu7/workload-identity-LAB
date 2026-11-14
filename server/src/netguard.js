@@ -5,7 +5,9 @@ const attempts = [];
 const origLookup = dns.lookup;
 export function install() {
   dns.lookup = function patched(host, ...rest) {
-    attempts.push({ host, at: Date.now() });
+    // A bind address (0.0.0.0/localhost/127.x) is not an outbound call.
+    const isBind = ['0.0.0.0', 'localhost', '::1'].includes(host) || /^127\./.test(String(host));
+    if (!isBind) attempts.push({ host, at: Date.now() });
     return origLookup.call(dns, host, ...rest);
   };
 }

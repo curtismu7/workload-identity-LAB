@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import TopMenu, { applyFontSize } from './top-menu/TopMenu.jsx';
 import Diagram from './components/Diagram.jsx';
 import JsonView from './components/JsonView.jsx';
+import GatewayTrace from './components/GatewayTrace.jsx';
 
 const api = async (path, body, extraHeaders = {}) => {
   const res = await fetch(path, body === undefined
@@ -30,6 +31,7 @@ export default function App() {
   const [gatewayResult, setGatewayResult] = useState(null);
   const [whoami, setWhoami] = useState(null);
   const [control, setControl] = useState(null);
+  const [traces, setTraces] = useState([]); // what the gateway did, one entry per gateway call
   const [runs, setRuns] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -78,7 +80,10 @@ export default function App() {
 
   const runDemo = async () => {
     setBusy(true); setError('');
-    setClaims(null); setToken(null); setTokenHeld(false); setGatewayResult(null); setWhoami(null); setControl(null);
+    setClaims(null); setToken(null); setTokenHeld(false); setGatewayResult(null); setWhoami(null); setControl(null); setTraces([]);
+    const addTrace = (step, title, r) => {
+      if (r.json?._meta?.trace) setTraces(prev => [...prev, { step, title, status: r.status, trace: r.json._meta.trace }]);
+    };
     try {
       // Step 1: mint
       const mint = await api('/api/idp/token', { scope, corrupt: corrupt || undefined });
@@ -98,6 +103,7 @@ export default function App() {
         { jsonrpc: '2.0', id: 1, method: 'tools/list' },
         { authorization: `Bearer ${mint.json.token}` });
       setGatewayResult({ status: gw.status, json: gw.json });
+      addTrace(2, 'Gateway check: tools/list', gw);
       await logRun('2 tools/list', gw.status === 200, gw.status === 200
         ? `accepted: ${gw.json._meta?.log}`
         : `refused (${gw.json._meta?.stage}): ${gw.json._meta?.detail}`);
@@ -106,6 +112,7 @@ export default function App() {
         { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'whoami', arguments: {} } },
         { authorization: `Bearer ${mint.json.token}` });
       setWhoami({ status: w.status, json: w.json });
+      addTrace(3, 'Pass Agent Token: whoami', w);
       const verdict = w.json?._meta?.unchanged; // Real mode: true/false/null, from comparing the claims
       const realRun = w.json?._meta?.source === 'real';
       await logRun('3 whoami', w.status === 200 && verdict !== false,
@@ -118,6 +125,7 @@ export default function App() {
         { jsonrpc: '2.0', id: 3, method: 'tools/list' },
         { authorization: 'Bearer garbage-token-not-real' });
       setControl(c.status);
+      addTrace(4, 'Control: garbage bearer', c);
       await logRun('4 control', c.status === 401, `garbage bearer -> ${c.status}`);
     } catch (e) {
       setError(String(e.message || e));
@@ -128,7 +136,7 @@ export default function App() {
 
   const reset = async () => {
     await api('/api/reset', {});
-    setClaims(null); setToken(null); setTokenHeld(false); setGatewayResult(null); setWhoami(null); setControl(null); setRuns([]);
+    setClaims(null); setToken(null); setTokenHeld(false); setGatewayResult(null); setWhoami(null); setControl(null); setTraces([]); setRuns([]);
   };
 
   const gwOk = gatewayResult?.status === 200;
@@ -200,7 +208,7 @@ export default function App() {
                   {whoami && (!whoOk ? <Chip ok={false}>{whoami.status}</Chip>
                     : whoami.json?._meta?.unchanged === false ? <Chip ok={false}>token changed</Chip>
                       : <Chip ok>{whoami.json?._meta?.source === 'real' && whoami.json._meta.unchanged !== true ? '200 received' : 'token unchanged'}</Chip>)}
-                  {backendClaims && <JsonView data={backendClaims.receivedClaims || backendClaims} testid="whoami-claims" label="what the backend received" />}
+                  {backendClaims && <JsonView value={backendClaims.receivedClaims || backendClaims} testId="whoami-claims" label="what the backend received" />}
                 </div></div>
               <div className="wi-step"><span className="wi-step-num">4</span>
                 <div><strong>Control</strong> — garbage bearer.
@@ -218,9 +226,13 @@ export default function App() {
             {claims && (
               <>
                 <h3>Decoded claims</h3>
-                <JsonView data={claims} testid="claims-view" label="IdP token claims" />
+                <JsonView value={claims} testId="claims-view" label="IdP token claims" />
               </>
             )}
+          </div>
+
+          <div className="wi-card wi-card-wide">
+            <GatewayTrace exchanges={traces} source={mode} />
           </div>
 
           <div className="wi-card">

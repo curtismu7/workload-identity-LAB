@@ -93,6 +93,8 @@ export async function mintRealToken(cfg, { scope, corrupt } = {}) {
 }
 
 const ID_HEADERS = ['x-request-id', 'x-correlation-id', 'x-amzn-trace-id', 'traceparent'];
+// The response headers worth showing on the trace panel (an allowlist: nothing else is passed on).
+const SHOWN_HEADERS = ['content-type', ...ID_HEADERS, 'www-authenticate', 'mcp-session-id', 'date'];
 
 // A gateway reply is JSON or a Server-Sent-Events stream carrying the JSON-RPC message.
 export function parseGatewayBody(contentType, text) {
@@ -120,11 +122,13 @@ export async function callGateway(cfg, appName, bearer, rpc) {
   }, { timeoutMs: 60000 });
   const body = parseGatewayBody(res.headers.get('content-type'), await res.text());
   const requestId = ID_HEADERS.map(h => res.headers.get(h)).find(Boolean) || null;
+  const headers = Object.fromEntries(SHOWN_HEADERS.map(h => [h, res.headers.get(h)]).filter(([, v]) => v));
   const where = `${new URL(cfg.gateway).host}/${appName}/mcp`;
   const refused = res.status >= 400;
   return {
     status: res.status,
     body,
+    headers,
     url,
     requestId,
     at: new Date().toISOString(),

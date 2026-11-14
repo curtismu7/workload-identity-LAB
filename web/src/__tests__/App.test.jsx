@@ -69,6 +69,61 @@ describe('Workload Identity Lab', () => {
     expect(fetch.mock.calls.some(([u]) => String(u).includes('/api/gateway/'))).toBe(false);
   });
 
+  it('shows what Privilege did: the decisions, the exact request and the exact response', async () => {
+    const base = fetch.getMockImplementation();
+    const trace = {
+      source: 'mock',
+      request: { method: 'POST', url: 'https://gateway.workload-lab.invalid/federated-agent/mcp', headers: { authorization: 'Bearer eyJhbGciOiJSUzI1NiIs… (900 characters, shortened)' }, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } },
+      response: { status: 401, headers: { 'content-type': 'application/json' }, body: { error: 'unauthorized', stage: 'audience' } },
+      decisions: [
+        { id: 'signature', label: 'Signature', outcome: 'pass', basis: 'checked', evidence: 'verifies against the registered JWKS' },
+        { id: 'audience', label: 'Audience', outcome: 'fail', basis: 'checked', evidence: 'aud https://other != https://door' },
+        { id: 'grant', label: 'Grant', outcome: 'skipped', basis: 'checked', evidence: 'not reached: the token was refused' },
+      ],
+      record: 'workload token rejected: audience mismatch',
+    };
+    fetch.mockImplementation((url, init) => {
+      if (String(url).includes('/api/gateway/federated-agent/mcp') && init?.headers?.authorization === 'Bearer h.sig.s') return Promise.resolve(mockJson(401, { error: 'unauthorized', _meta: { log: 'x', stage: 'audience', trace } }));
+      return base(url, init);
+    });
+    render(<App />);
+    expect(await screen.findByTestId('gateway-trace-empty')).toBeTruthy();
+    await userEvent.click(screen.getByTestId('run-btn'));
+    const decisions = await screen.findByTestId('trace-2-decisions');
+    expect(decisions).toHaveTextContent(/Signature.*verifies against the registered JWKS/);
+    expect(decisions).toHaveTextContent('PASS');
+    expect(decisions).toHaveTextContent('FAIL');
+    expect(decisions).toHaveTextContent('NOT REACHED');
+    expect(screen.getByTestId('trace-2')).toHaveTextContent('refused at: Audience');
+    expect(screen.getByTestId('trace-2-request')).toHaveTextContent('POST https://gateway.workload-lab.invalid/federated-agent/mcp');
+    expect(screen.getByTestId('trace-2-request')).toHaveTextContent('shortened');
+    expect(screen.getByTestId('trace-2-response')).toHaveTextContent('HTTP 401');
+    expect(screen.getByTestId('gateway-trace-basis')).toHaveTextContent(/Simulated/);
+  });
+
+  it('real trace: inferred decisions are labelled as such, and an unreachable gateway shows no response', async () => {
+    const base = fetch.getMockImplementation();
+    const req = { method: 'POST', url: 'https://gw.example.com/pftoken/mcp', headers: { authorization: 'Bearer <PingFederate JWT, 900 characters, kept on the server>' }, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } };
+    fetch.mockImplementation((url, init) => {
+      if (String(url).includes('/api/info')) return Promise.resolve(mockJson(200, { source: 'real', realAvailable: true, real: { pfHost: 'pf.example.com', gatewayHost: 'gw.example.com', scopes: 'openid' }, simulated: false }));
+      if (String(url).includes('/api/idp/token')) return Promise.resolve(mockJson(200, { token: 'wi-held-abc', held: true, claims: { iss: 'https://pf.example.com' } }));
+      if (String(url).includes('/api/gateway/federated-agent/mcp') && init?.headers?.authorization === 'Bearer wi-held-abc') {
+        return Promise.resolve(mockJson(200, { result: { tools: [] }, _meta: { source: 'real', log: 'x', trace: { source: 'real', request: req, response: { status: 200, headers: { 'x-request-id': 'req-1' }, body: { result: { tools: [] } } }, decisions: [{ id: 'authenticated', label: 'Token accepted', outcome: 'pass', basis: 'inferred', evidence: 'HTTP 200' }], record: 'Look for: workload token accepted', at: '2026-11-14T15:00:00Z', requestId: 'req-1' } } }));
+      }
+      if (String(url).includes('/api/gateway/federated-rs/mcp')) {
+        return Promise.resolve(mockJson(502, { error: 'upstream_unreachable', _meta: { source: 'real', stage: 'upstream_unreachable', trace: { source: 'real', request: req, response: null, decisions: [{ id: 'reach', label: 'Reach the gateway', outcome: 'fail', basis: 'observed', evidence: 'upstream unreachable (connection refused)' }], record: null } } }));
+      }
+      return base(url, init);
+    });
+    render(<App />);
+    await userEvent.click(await screen.findByTestId('run-btn'));
+    expect(await screen.findByTestId('trace-2-decisions')).toHaveTextContent('inferred from the outcome');
+    expect(screen.getByTestId('trace-2')).toHaveTextContent('request req-1');
+    expect(screen.getByTestId('gateway-trace-basis')).toHaveTextContent(/authoritative record/i);
+    expect(await screen.findByTestId('trace-3-response')).toHaveTextContent('No response');
+    expect(screen.getByTestId('trace-3-decisions')).toHaveTextContent('connection refused');
+  });
+
   it('run shows gateway acceptance, tools, passthrough and 401 control', async () => {
     render(<App />);
     await userEvent.click(await screen.findByTestId('run-btn'));

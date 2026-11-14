@@ -208,7 +208,7 @@ export default function App() {
                   {whoami && (!whoOk ? <Chip ok={false}>{whoami.status}</Chip>
                     : whoami.json?._meta?.unchanged === false ? <Chip ok={false}>token changed</Chip>
                       : <Chip ok>{whoami.json?._meta?.source === 'real' && whoami.json._meta.unchanged !== true ? '200 received' : 'token unchanged'}</Chip>)}
-                  {backendClaims && <JsonView data={backendClaims.receivedClaims || backendClaims} testid="whoami-claims" label="what the backend received" />}
+                  {backendClaims && <JsonView value={backendClaims.receivedClaims || backendClaims} testId="whoami-claims" label="what the backend received" />}
                 </div></div>
               <div className="wi-step"><span className="wi-step-num">4</span>
                 <div><strong>Control</strong> — garbage bearer.
@@ -226,7 +226,7 @@ export default function App() {
             {claims && (
               <>
                 <h3>Decoded claims</h3>
-                <JsonView data={claims} testid="claims-view" label="IdP token claims" />
+                <JsonView value={claims} testId="claims-view" label="IdP token claims" />
               </>
             )}
           </div>

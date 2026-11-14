@@ -20,7 +20,7 @@ export function createApp() {
   app.disable('x-powered-by');
   app.use(express.json({ limit: '100kb' }));
   // Loopback host check (rulebook safety)
-  const ALLOWED_HOSTS = (process.env.LAB_ALLOWED_HOSTS || 'localhost,127.0.0.1,local.ping-devops.com').split(',');
+  const ALLOWED_HOSTS = (process.env.LAB_ALLOWED_HOSTS || 'localhost,127.0.0.1,local.ping-devops.com,workload-identity-lab,workload-identity-lab.local.ping-devops.com').split(',');
   app.use((req, res, next) => {
     const host = String(req.headers.host || '').split(':')[0];
     if (!ALLOWED_HOSTS.includes(host)) return res.status(421).json({ error: 'bad host' });

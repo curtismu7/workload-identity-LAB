@@ -7,7 +7,7 @@ services:
     restart: unless-stopped
     environment:
       - PORT=7816
-      - LAB_ALLOWED_HOSTS=localhost,127.0.0.1,local.ping-devops.com
+      - LAB_ALLOWED_HOSTS=localhost,127.0.0.1,local.ping-devops.com,workload-identity-lab,workload-identity-lab.local.ping-devops.com
       # Real mode (owner-only; keep in the app's own .env, never committed):
       # - WI_REAL_GATEWAY_URL=https://mcpgw.ai-demo.ping-devops.com
       # - WI_REAL_CLIENT_SECRET=set-in-env

@@ -132,15 +132,18 @@ describe('Workload Identity Lab', () => {
     expect(screen.getByTestId('whoami-claims')).toHaveTextContent('demo-agent-1');
   });
 
-  it('json views render colored by default and toggle to raw', async () => {
+  it('json panes offer Formatted | Raw and render claims in both', async () => {
     render(<App />);
     await userEvent.click(await screen.findByTestId('run-btn'));
-    await waitFor(() => expect(screen.getByTestId('claims-view-pre')).toBeTruthy());
-    const toggle = screen.getByTestId('claims-view-toggle');
-    expect(toggle.getAttribute('aria-pressed')).toBe('true');
-    await userEvent.click(toggle);
-    expect(toggle.getAttribute('aria-pressed')).toBe('false');
-    expect(screen.getByTestId('claims-view-pre').textContent).toContain('"iss"');
+    await waitFor(() => expect(screen.getByTestId('claims-view')).toBeTruthy());
+    // Formatted is the default view: a form with a label per field
+    expect(screen.getByTestId('claims-view')).toHaveTextContent('iss');
+    // switch to Raw: the exact JSON text, coloured
+    await userEvent.click(screen.getByTestId('claims-view-raw'));
+    expect(screen.getByTestId('claims-view')).toHaveTextContent('"iss"');
+    // back to Formatted
+    await userEvent.click(screen.getByTestId('claims-view-formatted'));
+    expect(screen.getByTestId('claims-view')).toHaveTextContent('iss');
   });
 
   it('negative case shows the refusal stage', async () => {

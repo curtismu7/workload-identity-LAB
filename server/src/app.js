@@ -5,7 +5,8 @@ import { jwks, MOCK_ISSUER, MOCK_AUDIENCE } from './keys.js';
 import { mintToken, decodeUnsafe, idpMeta } from './mockIdp.js';
 import { mcpCall, gatewayMeta, validateWorkloadToken } from './mockGateway.js';
 import { getMode, setMode } from './mode.js';
-import { realConfig, realHowTo, publicInfo, mintRealToken, holdToken, callGateway, passthroughVerdict } from './realGateway.js';
+import { realConfig, realHowTo, publicInfo, mintRealToken, holdToken, callGateway, passthroughVerdict, resolveBearer } from './realGateway.js';
+import { mockTrace, realTrace, realFailureTrace } from './trace.js';
 import { install as installNetguard, report as netguardReport, assertMockZeroOutbound } from './netguard.js';
 import { listDiagrams, getDiagram } from './diagrams.js';
 import { callUpstream } from './upstream.js';
@@ -112,14 +113,16 @@ export function createApp() {
         const out = await callGateway(cfg, appName, token, req.body);
         const _meta = { source: 'real', log: out.log, stage: out.stage, detail: out.detail, gatewayUrl: out.url, requestId: out.requestId, at: out.at };
         if (req.params.app === 'federated-rs' && out.status === 200) _meta.unchanged = passthroughVerdict(token, out.body);
+        _meta.trace = realTrace({ url: out.url, bearer: token, resolve: resolveBearer, rpc: req.body, out, unchanged: _meta.unchanged });
         return res.status(out.status).json({ ...out.body, _meta });
       } catch (e) {
         // Rule 23: a named failure, with the same _meta shape the page already reads
-        return res.status(502).json({ error: e.code || 'upstream_error', message: e.message, _meta: { source: 'real', stage: e.code || 'upstream_error', detail: e.message, log: e.message } });
+        const trace = realFailureTrace({ url: `${cfg.gateway}/${appName}/mcp`, bearer: token, resolve: resolveBearer, rpc: req.body, error: e.message });
+        return res.status(502).json({ error: e.code || 'upstream_error', message: e.message, _meta: { source: 'real', stage: e.code || 'upstream_error', detail: e.message, log: e.message, trace } });
       }
     }
     const out = mcpCall(token, req.body);
-    res.status(out.http).json({ ...out.body, _meta: { log: out.log, stage: out.stage, detail: out.detail, claims: out.claims } });
+    res.status(out.http).json({ ...out.body, _meta: { log: out.log, stage: out.stage, detail: out.detail, claims: out.claims, trace: mockTrace({ app: req.params.app, token, rpc: req.body, out }) } });
   });
 
   // Validate-only (what the gateway checks, step by step)

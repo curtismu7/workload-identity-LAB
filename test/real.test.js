@@ -143,6 +143,52 @@ test('real flow: mint -> tools/list -> whoami passthrough -> garbage control', a
   });
 });
 
+test('real trace: exact request and response, inferred decisions, and nothing secret', async () => {
+  await withReal(async ({ post, seen }) => {
+    const mint = await post('/api/idp/token', {});
+    const token = seen.pf[0].token;
+    const list = await post('/api/gateway/federated-agent/mcp', LIST, { authorization: `Bearer ${mint.json.token}` });
+    const t = list.json._meta.trace;
+    assert.equal(t.source, 'real');
+    assert.match(t.request.url, /\/pftoken\/mcp$/);
+    assert.deepEqual(t.request.body, LIST);
+    assert.equal(t.request.headers.authorization, `Bearer <PingFederate JWT, ${token.length} characters, kept on the server>`);
+    assert.equal(t.response.status, 200);
+    assert.equal(t.response.headers['content-type'], 'text/event-stream');
+    assert.equal(t.response.headers['x-request-id'], 'req-200');
+    assert.deepEqual(t.decisions.map(d => `${d.id}:${d.outcome}:${d.basis}`), ['authenticated:pass:inferred', 'grant:pass:inferred']);
+    assert.match(t.decisions[1].evidence, /ListIndexTool, CountTool/);
+    assert.match(t.record, /workload token accepted/);
+    assert.equal(t.requestId, 'req-200');
+    // nothing secret anywhere in what the browser receives
+    const wire = JSON.stringify(list.json);
+    assert.ok(!wire.includes(SECRET));
+    assert.ok(!wire.includes(token));
+  });
+});
+
+test('real trace: a refused call is an inferred fail that names the log line to look for', async () => {
+  await withReal(async ({ post }) => {
+    await post('/api/idp/token', {});
+    const t = (await post('/api/gateway/federated-agent/mcp', LIST, { authorization: 'Bearer garbage-token-not-real' })).json._meta.trace;
+    assert.equal(t.request.headers.authorization, 'Bearer garbage-token-not-real');
+    assert.equal(t.response.status, 401);
+    assert.equal(t.response.headers['x-request-id'], 'req-401');
+    assert.deepEqual(t.decisions.map(d => `${d.id}:${d.outcome}:${d.basis}`), ['authenticated:fail:inferred', 'grant:skipped:inferred']);
+    assert.match(t.record, /workload token rejected/);
+  });
+});
+
+test('real trace: whoami adds an observed Pass Agent Token decision', async () => {
+  await withReal(async ({ post }) => {
+    const mint = await post('/api/idp/token', {});
+    const t = (await post('/api/gateway/federated-rs/mcp', WHOAMI, { authorization: `Bearer ${mint.json.token}` })).json._meta.trace;
+    const fwd = t.decisions.find(d => d.id === 'forward');
+    assert.equal(fwd.outcome, 'pass');
+    assert.equal(fwd.basis, 'observed');
+  });
+});
+
 test('wrong-audience case leaves out resource=, so the default token manager answers and the gateway refuses', async () => {
   await withReal(async ({ post, seen }) => {
     const mint = await post('/api/idp/token', { corrupt: 'wrong-audience' });
@@ -189,6 +235,10 @@ test('an unreachable gateway is a named 502, not a blank result', async () => {
     assert.equal(gw.status, 502);
     assert.equal(gw.json.error, 'upstream_unreachable');
     assert.equal(gw.json._meta.stage, 'upstream_unreachable');
+    // the trace still shows what was sent, with no response and no decision invented
+    assert.equal(gw.json._meta.trace.response, null);
+    assert.equal(gw.json._meta.trace.decisions[0].id, 'reach');
+    assert.equal(gw.json._meta.trace.decisions[0].outcome, 'fail');
   });
 });
 

@@ -34,6 +34,41 @@ describe('Workload Identity Lab', () => {
     expect(screen.getByRole('heading', { name: /federated agents/i })).toBeTruthy();
   });
 
+  it('tells the presenter how to prove it in Privilege, and says Mock leaves nothing there', async () => {
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: /show it in privilege/i })).toBeTruthy();
+    expect(screen.getByTestId('console-map')).toHaveTextContent(/required claims/i);
+    expect(screen.getByTestId('proof-log-line')).toHaveTextContent('workload token accepted for key');
+    expect(screen.getByTestId('proof-mock-note')).toHaveTextContent(/nothing leaves this page/i);
+  });
+
+  it('real mode: the banner names the hosts, the real token is never shown, the proof note names the gateway', async () => {
+    const base = fetch.getMockImplementation();
+    fetch.mockImplementation((url, init) => {
+      if (String(url).includes('/api/info')) return Promise.resolve(mockJson(200, { source: 'real', realAvailable: true, real: { pfHost: 'pf.example.com', gatewayHost: 'gw.example.com', scopes: 'openid whoami:read' }, simulated: false }));
+      if (String(url).includes('/api/idp/token')) return Promise.resolve(mockJson(200, { token: 'wi-held-abc', held: true, claims: { iss: 'https://pf.example.com', aud: 'https://gw.example.com/pftoken/mcp' } }));
+      return base(url, init);
+    });
+    render(<App />);
+    expect(await screen.findByTestId('sim-banner')).toHaveTextContent(/REAL.*pf\.example\.com.*gw\.example\.com/);
+    await userEvent.click(screen.getByTestId('run-btn'));
+    expect(await screen.findByTestId('token-held')).toBeTruthy();
+    expect(screen.queryByTestId('raw-token')).toBeNull();
+    expect(screen.getByTestId('proof-real-note')).toHaveTextContent('gw.example.com');
+  });
+
+  it('real mode: a refused mint is named on the page and nothing is sent to the gateway', async () => {
+    const base = fetch.getMockImplementation();
+    fetch.mockImplementation((url, init) => {
+      if (String(url).includes('/api/idp/token')) return Promise.resolve(mockJson(502, { error: 'idp_refused', message: 'PingFederate refused the token request (HTTP 400): invalid_target' }));
+      return base(url, init);
+    });
+    render(<App />);
+    await userEvent.click(await screen.findByTestId('run-btn'));
+    expect(await screen.findByTestId('mode-error')).toHaveTextContent(/invalid_target/);
+    expect(fetch.mock.calls.some(([u]) => String(u).includes('/api/gateway/'))).toBe(false);
+  });
+
   it('run shows gateway acceptance, tools, passthrough and 401 control', async () => {
     render(<App />);
     await userEvent.click(await screen.findByTestId('run-btn'));

@@ -1,119 +1,201 @@
-import React, { useEffect, useState } from 'react';
-
-// Colored, theme-aware JSON viewer with raw/colored toggle (standalone UI standard:
-// theme tokens only, dark and light, visible borders, copy-friendly).
-// Color choices are per-token fixed hues with light/dark variants so both themes
-// hit 4.5:1 on their background.
+// JsonView: colored, theme-aware JSON display — family shared service (owner, 2026-11-14, Rule 24).
+// Vendor byte-for-byte into web/src/components/JsonView.jsx; never edit a lab's copy.
+// - Colors by token class (keys top/nested, strings, URLs, ISO dates, id/uuid, scopes, cost,
+//   booleans, null/empty) — palette fixed by Rule 24, light and dark, both >=4.5:1.
+// - Per-pane Colored/Raw toggle. Raw is plain text through the visible() guard.
+// - Strings pass the visible() text guard in BOTH modes: control and bidi characters render
+//   as visible escapes (violet), never markup. Uses the lab's safeText visible() when
+//   reachable, else a built-in equivalent.
+// - Marks (the only decoration): hl (this step's value), good (verified), bad (denied/tampered),
+//   warn (expiring). Pass marks = { "path.to.value": "hl" }; dotted paths, array items numeric.
+// - Optional lineNumbers for trace panes. jsdom-safe (no hard window/document assumptions).
+import React, { useEffect, useMemo, useState } from "react";
 
 const PALETTE = {
   light: {
-    key: '#8a1538',      // deep raspberry on white
-    string: '#1e6b34',   // green
-    number: '#8a4b00',   // amber-brown
-    boolTrue: '#0e6a6a', // teal
-    boolFalse: '#a12622',// red
-    nullLit: '#5b6770',  // grey
-    punct: '#556070',
-    bg: '#f7f8f9',
-    border: '#d8dde3',
+    key: "#a1123c", nestedKey: "#0b6a9e", string: "#177a3e", url: "#0b6a9e",
+    date: "#9a3412", id: "#b45309", idBg: "rgba(180,83,9,.08)", scope: "#1d4ed8",
+    scopeBg: "rgba(29,78,216,.07)", number: "#b45309", cost: "#166534",
+    true: "#0f766e", trueBg: "rgba(15,118,110,.08)", false: "#b91c1c",
+    falseBg: "rgba(185,28,28,.07)", nullLit: "#64748b", punct: "#7b8794",
+    esc: "#7c3aed", escBg: "rgba(124,58,237,.06)", bg: "#f4f6f8", border: "#d8dde3",
+    ln: "#94a3b8",
   },
   dark: {
-    key: '#f0a5b8',
-    string: '#8ee2a4',
-    number: '#f2c078',
-    boolTrue: '#7fd8d8',
-    boolFalse: '#f2a09e',
-    nullLit: '#9aa7b3',
-    punct: '#9aa7b3',
-    bg: '#14181c',
-    border: '#3a444e',
+    key: "#ff9db3", nestedKey: "#7cc4ff", string: "#7ee2a0", url: "#7cc4ff",
+    date: "#ffa86b", id: "#ffc46b", idBg: "rgba(255,196,107,.09)", scope: "#93c5fd",
+    scopeBg: "rgba(147,197,253,.09)", number: "#ffc46b", cost: "#86efac",
+    true: "#5eead4", trueBg: "rgba(94,234,212,.09)", false: "#fca5a5",
+    falseBg: "rgba(252,165,165,.09)", nullLit: "#8b98a5", punct: "#8b98a5",
+    esc: "#c4b5fd", escBg: "rgba(196,181,253,.07)", bg: "#0f1a26", border: "#3a444e",
+    ln: "#64748b",
   },
 };
 
-function colorize(value, pal) {
-  if (value === null) return <span style={{ color: pal.nullLit }}>null</span>;
-  if (typeof value === 'string') return <span style={{ color: pal.string }}>"{value}"</span>;
-  if (typeof value === 'number') return <span style={{ color: pal.number }}>{String(value)}</span>;
-  if (typeof value === 'boolean') return <span style={{ color: value ? pal.boolTrue : pal.boolFalse }}>{String(value)}</span>;
-  if (Array.isArray(value)) {
-    if (value.length === 0) return <span style={{ color: pal.punct }}>[]</span>;
-    return (
-      <span>
-        <span style={{ color: pal.punct }}>[</span>
-        {value.map((v, i) => (
-          <span key={i}>
-            <div style={{ marginLeft: 14 }}>{colorize(v, pal)}{i < value.length - 1 && <span style={{ color: pal.punct }}>,</span>}</div>
-          </span>
-        ))}
-        <span style={{ color: pal.punct }}>]</span>
-      </span>
-    );
+const RE_URL = /^https?:\/\//i;
+const RE_DATE = /^\d{4}-\d{2}-\d{2}(T[\d:.]+Z)?$|^\d{10,13}$/;
+const RE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const SCOPE_KEYS = new Set(["scope", "scopes", "permissions", "granted_scopes"]);
+const COST_KEYS = new Set(["cost", "price", "cost_estimate", "amount_usd"]);
+
+function classify(key, value) {
+  if (typeof value === "string") {
+    if (RE_URL.test(value)) return "url";
+    if (RE_DATE.test(value)) return "date";
+    if (RE_ID.test(value)) return "id";
+    if (key && SCOPE_KEYS.has(key)) return "scope";
+    return "string";
   }
-  const keys = Object.keys(value);
-  if (keys.length === 0) return <span style={{ color: pal.punct }}>{'{}'}</span>;
-  return (
-    <span>
-      <span style={{ color: pal.punct }}>{"{"}</span>
-      {keys.map((k, i) => (
-        <span key={k}>
-          <div style={{ marginLeft: 14 }}>
-            <span style={{ color: pal.key }}>"{k}"</span>
-            <span style={{ color: pal.punct }}>: </span>
-            {colorize(value[k], pal)}
-            {i < keys.length - 1 && <span style={{ color: pal.punct }}>,</span>}
-          </div>
-        </span>
-      ))}
-      <span style={{ color: pal.punct }}>{"}"}</span>
-    </span>
-  );
+  if (typeof value === "number") {
+    if (key && (COST_KEYS.has(key) || key.startsWith("cost_") || key.startsWith("price_"))) return "cost";
+    return "number";
+  }
+  if (value === true) return "true";
+  if (value === false) return "false";
+  return "nullLit";
 }
 
-export default function JsonView({ data, testid = 'json-view', label = 'JSON' }) {
-  const [colored, setColored] = useState(true);
+function styleFor(cls, pal) {
+  const s = { color: pal[cls] ?? pal.punct };
+  if (cls === "id") { s.background = pal.idBg; s.borderRadius = 3; s.padding = "0 3px"; }
+  if (cls === "scope") { s.background = pal.scopeBg; s.borderRadius = 3; s.padding = "0 3px"; s.fontWeight = 600; }
+  if (cls === "true") { s.background = pal.trueBg; s.borderRadius = 3; s.padding = "0 4px"; s.fontWeight = 700; }
+  if (cls === "false") { s.background = pal.falseBg; s.borderRadius = 3; s.padding = "0 4px"; s.fontWeight = 700; }
+  if (cls === "cost") s.fontWeight = 700;
+  if (cls === "url") s.textDecoration = "underline dotted";
+  if (cls === "nullLit") s.fontStyle = "italic";
+  return s;
+}
+
+const MARK_STYLE = (mark, theme) => {
+  if (mark === "hl") return { background: theme === "dark" ? "#4a3b12" : "#fef3c7", outline: `1.5px solid ${theme === "dark" ? "#a3841d" : "#d9a514"}`, borderRadius: 3 };
+  if (mark === "bad") return { background: theme === "dark" ? "#450a0a" : "#fee2e2", color: theme === "dark" ? "#fca5a5" : "#b91c1c", textDecoration: "line-through", borderRadius: 3 };
+  if (mark === "good") return { background: theme === "dark" ? "#0d3320" : "#dcfce7", color: theme === "dark" ? "#86efac" : "#166534", borderRadius: 3 };
+  if (mark === "warn") return { background: theme === "dark" ? "#431f07" : "#ffedd5", color: theme === "dark" ? "#ffa86b" : "#9a3412", borderRadius: 3 };
+  return null;
+};
+
+function defaultVisible(v) {
+  // Visible-escapes guard: control and bidi characters become U+XXXX tokens.
+  return String(v).replace(/[\u0000-\u0008\u000b-\u001f\u202a-\u202e\u2066-\u2069\u007f]/g,
+    (c) => `‹U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, "0")}›`);
+}
+
+export default function JsonView({ value, label, testId, marks = {}, lineNumbers = false, defaultMode = "colored" }) {
+  const [mode, setMode] = useState(defaultMode === "raw" ? "raw" : "colored");
   const [theme, setTheme] = useState(() => {
-    const attr = document.documentElement.getAttribute('data-theme');
-    if (attr === 'dark' || attr === 'light') return attr;
-    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    try {
+      const attr = typeof document !== "undefined" ? document.documentElement.getAttribute("data-theme") : null;
+      if (attr === "dark" || attr === "light") return attr;
+      return typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ? "dark" : "light";
+    } catch { return "light"; }
   });
   useEffect(() => {
+    let mq = null; let mo = null;
     const read = () => {
-      const attr = document.documentElement.getAttribute('data-theme');
-      if (attr === 'dark' || attr === 'light') return setTheme(attr);
-      setTheme(window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      try {
+        const attr = document.documentElement.getAttribute("data-theme");
+        if (attr === "dark" || attr === "light") return setTheme(attr);
+        setTheme(window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ? "dark" : "light");
+      } catch { /* keep last theme */ }
     };
     read();
-    const mo = new MutationObserver(read);
-    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
-    mq?.addEventListener?.('change', read);
-    return () => { mo.disconnect(); mq?.removeEventListener?.('change', read); };
+    try { mo = new MutationObserver(read); mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] }); } catch { /* old jsdom */ }
+    try { mq = window.matchMedia?.("(prefers-color-scheme: dark)") ?? null; mq?.addEventListener?.("change", read); } catch { /* no matchMedia */ }
+    return () => { mo?.disconnect?.(); mq?.removeEventListener?.("change", read); };
   }, []);
   const pal = PALETTE[theme] || PALETTE.light;
+  const rawText = useMemo(() => (typeof value === "string" ? value : JSON.stringify(value, null, 2)), [value]);
+
+  // visible(): the lab's safeText guard when present on window.__safeTextVisible (a lab can set it
+  // in main.jsx: import { visible } from './safeText'; window.__safeTextVisible = visible;),
+  // otherwise the built-in equivalent above.
+  const vis = (v) => (typeof window !== "undefined" && typeof window.__safeTextVisible === "function" ? window.__safeTextVisible(v) : defaultVisible(v));
+
+  let ln = 0;
+  const line = () => (lineNumbers ? <span style={{ display: "inline-block", width: "2.2em", color: pal.ln, opacity: 0.55, userSelect: "none" }}>{++ln}</span> : null);
+
+  const renderScalar = (v, key, path) => {
+    const cls = classify(key, v);
+    const markStyle = MARK_STYLE(marks[path], theme);
+    const body = <span style={styleFor(cls, pal)}>{vis(typeof v === "string" ? v : String(v))}</span>;
+    return markStyle ? <span style={markStyle}>{body}</span> : body;
+  };
+
+  const renderNode = (node, key, depth, path) => {
+    if (typeof node !== "object" || node === null) return renderScalar(node, key, path);
+    const isArray = Array.isArray(node);
+    const keys = isArray ? node.map((_, i) => i) : Object.keys(node);
+    if (keys.length === 0) {
+      return <span style={{ color: pal.nullLit, fontStyle: "italic" }}>{isArray ? "[]" : "{}"}</span>;
+    }
+    return (
+      <span>
+        <span style={{ color: pal.punct }}>{isArray ? "[" : "{"}</span>
+        {keys.map((k, i) => {
+          const child = node[k];
+          const childPath = `${path}${path ? "." : ""}${k}`;
+          const isObj = typeof child === "object" && child !== null;
+          return (
+            <div key={String(k)} style={{ marginLeft: depth === 0 ? 0 : 14 }}>
+              {line()}
+              {!isArray && (
+                <span>
+                  <span style={{ color: depth === 0 ? pal.key : pal.nestedKey, fontWeight: depth === 0 ? 600 : 400 }}>"{vis(k)}"</span>
+                  <span style={{ color: pal.punct }}>: </span>
+                </span>
+              )}
+              {isObj
+                ? renderNode(child, isArray ? null : k, depth + 1, childPath)
+                : (() => {
+                    const cls = classify(isArray ? null : k, child);
+                    const markStyle = MARK_STYLE(marks[childPath], theme);
+                    const body = <span style={styleFor(cls, pal)}>{typeof child === "string" ? `"${vis(child)}"` : vis(String(child))}</span>;
+                    return markStyle ? <span style={markStyle}>{body}</span> : body;
+                  })()}
+              {i < keys.length - 1 && <span style={{ color: pal.punct }}>,</span>}
+            </div>
+          );
+        })}
+        <span style={{ color: pal.punct }}>{isArray ? "]" : "}"}</span>
+      </span>
+    );
+  };
+
+  // A plain-string value renders as text only: no toggle (nothing to re-color),
+  // and the pane's testid sits on the pre so textContent is exactly the string.
+  if (typeof value === "string") {
+    return (
+      <pre
+        data-testid={testId || "json-view-pre"}
+        aria-label={label}
+        style={{ margin: 0, padding: "10px 14px", borderRadius: 8, overflowX: "auto", fontSize: 12.5, lineHeight: 1.6, background: pal.bg, border: `1px solid ${pal.border}`, fontFamily: '"IBM Plex Mono",ui-monospace,monospace', color: pal.string, whiteSpace: "pre-wrap", wordBreak: "break-all" }}
+      >
+        {vis(value)}
+      </pre>
+    );
+  }
 
   return (
-    <div data-testid={testid}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+    <div data-testid={testId || "json-view"}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
         <button
           type="button"
-          data-testid={`${testid}-toggle`}
-          onClick={() => setColored(c => !c)}
-          aria-pressed={colored}
-          style={{
-            font: 'inherit', fontSize: 11, padding: '2px 10px', borderRadius: 6, cursor: 'pointer',
-            border: `1px solid ${pal.border}`, background: colored ? pal.key : 'transparent',
-            color: colored ? '#fff' : 'inherit',
-          }}
+          data-testid={`${testId || "json-view"}-toggle`}
+          aria-pressed={mode === "colored"}
+          onClick={() => setMode(m => (m === "colored" ? "raw" : "colored"))}
+          style={{ font: "inherit", fontSize: 11, padding: "2px 10px", borderRadius: 6, cursor: "pointer", border: `1px solid ${pal.border}`, background: mode === "colored" ? "#a1123c" : "transparent", color: mode === "colored" ? "#fff" : "inherit" }}
         >
-          {colored ? 'Colored' : 'Raw'}
+          {mode === "colored" ? "Colored" : "Raw"}
         </button>
-        <span style={{ fontSize: 11, opacity: 0.7 }}>{label}</span>
+        {label && <span style={{ fontSize: 11, opacity: 0.7 }}>{label}</span>}
       </div>
       <pre
-        data-testid={`${testid}-pre`}
-        style={{ margin: 0, padding: 10, borderRadius: 8, overflowX: 'auto', fontSize: 12, lineHeight: 1.5, background: pal.bg, border: `1px solid ${pal.border}` }}
+        data-testid={`${testId || "json-view"}-pre`}
+        aria-label={label}
+        style={{ margin: 0, padding: "10px 14px", borderRadius: 8, overflowX: "auto", fontSize: 12.5, lineHeight: 1.6, background: pal.bg, border: `1px solid ${pal.border}`, fontFamily: '"IBM Plex Mono",ui-monospace,monospace', color: pal.punct }}
       >
-        {colored ? colorize(data, pal) : JSON.stringify(data, null, 2)}
+        {mode === "colored" ? renderNode(value, null, 0, "") : vis(rawText)}
       </pre>
     </div>
   );

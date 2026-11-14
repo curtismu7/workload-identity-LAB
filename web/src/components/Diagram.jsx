@@ -59,8 +59,8 @@ export default function Diagram({ diagramId = 'workload-identity-flow', theme = 
 
   return (
     <div data-testid="diagram">
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-        <button className="btn-primary" data-testid="simulate-btn" onClick={simulate} disabled={playing}>Simulate</button>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 12 }}>
+        <button className="primary" data-testid="simulate-btn" onClick={simulate} disabled={playing}>Simulate</button>
         <button className="btn-secondary" data-testid="diagram-reset-btn" onClick={reset}>Reset</button>
         <label htmlFor="speed">Speed</label>
         <select id="speed" data-testid="speed-select" value={speed} onChange={e => setSpeed(Number(e.target.value))}>

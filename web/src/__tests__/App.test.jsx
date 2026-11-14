@@ -42,6 +42,17 @@ describe('Workload Identity Lab', () => {
     expect(screen.getByTestId('whoami-claims')).toHaveTextContent('demo-agent-1');
   });
 
+  it('json views render colored by default and toggle to raw', async () => {
+    render(<App />);
+    await userEvent.click(await screen.findByTestId('run-btn'));
+    await waitFor(() => expect(screen.getByTestId('claims-view-pre')).toBeTruthy());
+    const toggle = screen.getByTestId('claims-view-toggle');
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    await userEvent.click(toggle);
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByTestId('claims-view-pre').textContent).toContain('"iss"');
+  });
+
   it('negative case shows the refusal stage', async () => {
     fetch.mockImplementation((url, init) => {
       if (String(url).includes('/api/gateway/federated-agent/mcp')) return Promise.resolve(mockJson(401, { error: 'unauthorized', stage: 'audience', detail: 'aud mismatch', _meta: { log: 'rejected: audience mismatch' } }));

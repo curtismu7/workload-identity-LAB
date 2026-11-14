@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import TopMenu from './top-menu/TopMenu.jsx';
+import TopMenu, { applyFontSize } from './top-menu/TopMenu.jsx';
 import Diagram from './components/Diagram.jsx';
+import JsonView from './components/JsonView.jsx';
 
 const api = async (path, body, extraHeaders = {}) => {
   const res = await fetch(path, body === undefined
@@ -39,6 +40,21 @@ export default function App() {
     api('/api/info').then(({ json }) => { setInfo(json); setModeState(json.source); });
     loadRuns();
   }, [loadRuns]);
+
+  // Apply the theme choice (TopMenu is controlled; the app owns the attribute)
+  useEffect(() => {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme');
+      const mq = window.matchMedia('(prefers-color-scheme: dark)');
+      const onChange = () => { document.documentElement.removeAttribute('data-theme'); };
+      mq.addEventListener?.('change', onChange);
+      return () => mq.removeEventListener?.('change', onChange);
+    }
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+
+  // Text size: the TopMenu control sets --fs, app.css maps it onto the root font size
+  useEffect(() => { applyFontSize(fontSize); }, [fontSize]);
 
   const logRun = async (step, ok, detail) => {
     await api('/api/runs', { step, ok, detail });
@@ -106,14 +122,16 @@ export default function App() {
 
   return (
     <div className="lab-root">
-      <TopMenu
-        mode={{ value: mode, onChange: switchMode, realAvailable: info?.realAvailable, realHint: 'Set WI_REAL_GATEWAY_URL and WI_REAL_CLIENT_SECRET in the app .env' }}
-        theme={{ value: theme, onChange: setTheme }}
-        fontSize={{ value: fontSize, onChange: setFontSize }}
-        help={{ href: 'https://github.com/curtismu7/workload-identity-LAB#readme' }}
-        version="v0.1.0"
-        onReset={reset}
-      />
+      <div className="lab-bar">
+        <TopMenu
+          mode={{ value: mode, onChange: switchMode, realAvailable: info?.realAvailable, realHint: 'Set WI_REAL_GATEWAY_URL and WI_REAL_CLIENT_SECRET in the app .env' }}
+          theme={{ value: theme, onChange: setTheme }}
+          fontSize={{ value: fontSize, onChange: setFontSize }}
+          help={{ href: 'https://github.com/curtismu7/workload-identity-LAB#readme' }}
+          version="v0.1.0"
+          onReset={reset}
+        />
+      </div>
       <div className="sim-banner" data-testid="sim-banner">
         {mode === 'mock'
           ? 'SIMULATED — the IdP, gateway and MCP backend on this page are in-process mocks; no real system is called. Mock-issued tokens are labelled.'
@@ -144,10 +162,10 @@ export default function App() {
                 <option value="wrong-audience">wrong audience (token manager mix-up)</option>
               </select>
             </div>
-            <button className="btn-primary" data-testid="run-btn" onClick={runDemo} disabled={busy}>
+            <button className="primary" data-testid="run-btn" onClick={runDemo} disabled={busy}>
               {busy ? 'Running…' : 'Run'}
             </button>
-            <div className="wi-steps" style={{ marginTop: 14 }}>
+            <div className="wi-steps">
               <div className="wi-step"><span className="wi-step-num">1</span>
                 <div><strong>Mint</strong> — the IdP issues a JWT for the agent.
                   {claims && <Chip ok>{claims.iss}</Chip>}</div></div>
@@ -160,7 +178,7 @@ export default function App() {
               <div className="wi-step"><span className="wi-step-num">3</span>
                 <div><strong>Pass Agent Token</strong> — the backend reports what it received.
                   {whoami && (whoOk ? <Chip ok>token unchanged</Chip> : <Chip ok={false}>{whoami.status}</Chip>)}
-                  {backendClaims && <div className="wi-claims" data-testid="whoami-claims">{JSON.stringify(backendClaims.receivedClaims || backendClaims, null, 2).slice(0, 600)}</div>}
+                  {backendClaims && <JsonView data={backendClaims.receivedClaims || backendClaims} testid="whoami-claims" label="what the backend received" />}
                 </div></div>
               <div className="wi-step"><span className="wi-step-num">4</span>
                 <div><strong>Control</strong> — garbage bearer.
@@ -176,7 +194,7 @@ export default function App() {
             {claims && (
               <>
                 <h3>Decoded claims</h3>
-                <div className="wi-claims" data-testid="claims-view">{JSON.stringify(claims, null, 2)}</div>
+                <JsonView data={claims} testid="claims-view" label="IdP token claims" />
               </>
             )}
           </div>

@@ -70,7 +70,7 @@ export default function Diagram({ diagramId = 'workload-identity-flow', theme = 
         </select>
       </div>
       <div style={{ height: 420, border: '1px solid var(--border,#d8dde3)', borderRadius: 8 }}>
-        <ReactFlow nodes={nodes} edges={edges} onNodesChange={setNodes} colorMode={theme === 'dark' ? 'dark' : 'light'} fitView proOptions={{ hideAttribution: true }}>
+        <ReactFlow nodes={nodes} edges={edges} onNodesChange={(changes) => setNodes((ns) => applyNodeChanges(changes, ns))} colorMode={theme === 'dark' ? 'dark' : 'light'} fitView proOptions={{ hideAttribution: true }}>
           <Background />
           <Controls showInteractive={false} />
         </ReactFlow>

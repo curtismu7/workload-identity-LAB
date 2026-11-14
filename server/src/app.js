@@ -31,8 +31,11 @@ export function createApp() {
     if (req.method !== 'GET') {
       const origin = req.headers.origin;
       if (origin) {
-        try { if (new URL(origin).host !== req.headers.host) return res.status(403).json({ error: 'cross-origin write refused' }); }
-        catch { return res.status(403).json({ error: 'bad origin' }); }
+        try {
+          const originHost = new URL(origin).hostname; // strip port: the proxy rewrites Host
+          const allowed = ALLOWED_HOSTS.map(h => h.split(':')[0]);
+          if (!allowed.includes(originHost)) return res.status(403).json({ error: 'cross-origin write refused', detail: `origin ${originHost} not allowed` });
+        } catch { return res.status(403).json({ error: 'bad origin' }); }
       }
     }
     next();

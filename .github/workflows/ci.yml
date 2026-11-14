@@ -13,9 +13,9 @@ jobs:
       - run: npm install --workspaces
       - run: npm test
       - run: bash scripts/check-no-ai-attribution.sh
-      - run: node scripts/doctor.mjs
       - name: build web
         run: cd web && npm run build
+      - run: node scripts/doctor.mjs
   forbidden-strings:
     runs-on: ubuntu-latest
     steps:

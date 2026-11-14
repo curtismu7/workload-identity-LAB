@@ -10,7 +10,7 @@ then enforces the agent key's grant and forwards the token to the backend (Pass 
 ## Run
 - `docker compose up --build` → http://127.0.0.1:7816 (lab-proxy: https://local.ping-devops.com:8443/workload-identity/)
 - Dev: `npm install`, `cd web && npm run build`, `PORT=7816 node server/src/index.js`
-- Test: `npm test` (node --test, 21 tests; Real mode is tested against local fake PF + gateway)
+- Test: `npm test` (node --test, 29 tests; Real mode is tested against local fake PF + gateway); web: `cd web && npx vitest run` (9 tests)
 - Doctor: `npm run doctor`; Reset: `npm run reset` or POST /api/reset
 
 ## Modes (rule 19)
@@ -28,3 +28,7 @@ Toggle lives in the TopMenu; POST /api/mode switches at runtime.
 - Loopback-only bind, Host check, same-origin writes — see server/src/app.js.
 - The vendored web/src/top-menu/* must stay byte-identical to AI-DEMO-Standalone/shared/top-menu (pin file beside it).
 - Mock mode must keep netguard attempts at 0 — test-pinned.
+- The "What Privilege did" panel (web/src/components/GatewayTrace.jsx; data built in server/src/trace.js) is the reusable
+  request / response / decisions view for every Privilege demo; its data contract is the header of that file. The real gateway
+  returns no per-check detail, so Real-mode decisions stay labelled `inferred` (or `observed`): never present a check the
+  gateway did not report as if it had. Nothing secret goes in a trace (real token: not shown at all).

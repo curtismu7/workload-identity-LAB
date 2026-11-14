@@ -32,7 +32,7 @@ function realDecisions(rpc, out, unchanged) {
   const d = [];
   const toolNames = (out.body?.result?.tools || []).map(t => t.name);
   if (out.status === 200) {
-    d.push(inferred('authenticated', 'Token accepted', 'pass', 'HTTP 200: before answering, the gateway verified the signature against the issuer\'s registered JWKS, then the issuer, audience, required claims and lifetime.'));
+    d.push(inferred('authenticated', 'Authentication', 'pass', 'token accepted. HTTP 200: before answering, the gateway verified the signature against the issuer\'s registered JWKS, then the issuer, audience, required claims and lifetime.'));
     d.push(inferred('grant', 'Grant', 'pass', rpc.method === 'tools/list'
       ? (toolNames.length ? `the agent key's grant allows ${toolNames.length} tools on this app: ${toolNames.join(', ')}` : 'the agent key may use this app (it returned no tools)')
       : `the agent key's grant allows ${rpc.params?.name || rpc.method}`));
@@ -46,10 +46,10 @@ function realDecisions(rpc, out, unchanged) {
       });
     }
   } else if (out.status === 401) {
-    d.push(inferred('authenticated', 'Token refused', 'fail', `HTTP 401${out.stage ? ` (${out.stage})` : ''}: the gateway refused the token. Its reply does not say which check failed; the gateway log line "workload token rejected: <reason>" does.`));
+    d.push(inferred('authenticated', 'Authentication', 'fail', `token refused. HTTP 401${out.stage ? ` (${out.stage})` : ''}: the gateway's reply does not say which check failed; the gateway log line "workload token rejected: <reason>" does.`));
     d.push(inferred('grant', 'Grant', 'skipped', 'not reached: the token was refused'));
   } else if (out.status === 403) {
-    d.push(inferred('authenticated', 'Token accepted', 'pass', 'HTTP 403 is answered after authentication, so the token was accepted.'));
+    d.push(inferred('authenticated', 'Authentication', 'pass', 'token accepted. HTTP 403 is answered after authentication.'));
     d.push(inferred('grant', 'Grant', 'fail', out.detail || 'no grant rule on the agent key matched this app or tool'));
   } else {
     d.push({ id: 'status', label: `HTTP ${out.status}`, outcome: 'info', basis: 'observed', evidence: out.detail || 'an unexpected answer from the gateway' });

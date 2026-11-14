@@ -1,0 +1,14 @@
+.wi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4, 16px); }
+@media (max-width: 900px) { .wi-grid { grid-template-columns: 1fr; } }
+.wi-card { background: var(--surface, #fff); border: 1px solid var(--border, #d8dde3); border-radius: 10px; padding: 16px; border-top: 3px solid var(--accent, #b3232a); }
+.wi-steps { display: flex; flex-direction: column; gap: 10px; }
+.wi-step { display: flex; gap: 10px; align-items: flex-start; }
+.wi-step-num { min-width: 26px; height: 26px; border-radius: 50%; background: var(--accent, #b3232a); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; }
+.wi-claims { font-family: ui-monospace, monospace; font-size: 12px; background: var(--code-bg, #f4f6f8); padding: 10px; border-radius: 8px; overflow-x: auto; white-space: pre; }
+.wi-runlog { max-height: 260px; overflow-y: auto; font-size: 12px; }
+.wi-chip-ok { background: #e6f4ea; color: #1e7a34; border: 1px solid #b7dfc2; }
+.wi-chip-deny { background: #fdecec; color: #a12622; border: 1px solid #f3c2c0; }
+[data-theme="dark"] .wi-chip-ok { background: #12351d; color: #8ee2a4; border-color: #235c33; }
+[data-theme="dark"] .wi-chip-deny { background: #3b1414; color: #f2a09e; border-color: #6b2320; }
+[data-theme="dark"] .wi-card { background: var(--surface, #1c2127); border-color: var(--border, #333b44); }
+[data-theme="dark"] .wi-claims { background: #14181c; color: #cdd6df; }

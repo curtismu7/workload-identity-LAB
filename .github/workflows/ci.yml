@@ -1,0 +1,34 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with: { node-version: 26 }
+      - run: npm install
+      - run: npm install --workspaces
+      - run: npm test
+      - run: bash scripts/check-no-ai-attribution.sh
+      - run: node scripts/doctor.mjs
+      - name: build web
+        run: cd web && npm run build
+  forbidden-strings:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with: { fetch-depth: 0 }
+      - name: scan history for forbidden strings
+        env:
+          FORBIDDEN_STRINGS: ${{ secrets.FORBIDDEN_STRINGS }}
+        run: |
+          if [ -z "$FORBIDDEN_STRINGS" ]; then echo "FORBIDDEN_STRINGS secret not set (owner)"; exit 1; fi
+          COUNT=$(git log -p --all | grep -cF -f <(echo "$FORBIDDEN_STRINGS") || true)
+          echo "matches: $COUNT"; test "$COUNT" -eq 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

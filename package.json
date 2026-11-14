@@ -1,0 +1,22 @@
+{
+  "name": "workload-identity-lab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "start": "node server/src/index.js",
+    "build": "cd web && npm run build",
+    "test": "node --test test/*.test.js",
+    "doctor": "node scripts/doctor.mjs",
+    "reset": "node scripts/reset.mjs"
+  },
+  "workspaces": [
+    "web"
+  ],
+  "dependencies": {
+    "express": "^4.19.0"
+  }
+}

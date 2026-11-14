@@ -1,0 +1,13 @@
+{
+  "id": "workload-identity-lab",
+  "title": "Workload Identity Lab",
+  "summary": "Federated agents: authenticate to the gateway with a JWT from your own identity platform — no gateway secret. Signature, issuer, audience, required claims; Pass Agent Token passthrough.",
+  "verticals": ["default"],
+  "cards": [
+    { "id": "what-is-workload-identity", "title": "What workload identity is", "body": "An agent identifies with a JWT its own platform issued (PF, K8s, GitHub Actions, any OIDC). The gateway trusts the issuer cryptographically instead of holding a secret for the agent." },
+    { "id": "check-chain", "title": "The gateway's check chain", "body": "Signature against the registered JWKS, then exact issuer, exact audience, required claims (act.sub, client_id), token lifetime. Any failure is 401 with the stage named." },
+    { "id": "pass-agent-token", "title": "Pass Agent Token", "body": "The gateway forwards the caller's workload token to the backend unchanged, so the backend verifies the same federated identity. Only callers that came in with a workload assertion can use apps on this mode." },
+    { "id": "virtual-key-vs-workload", "title": "Virtual key vs workload identity", "body": "Virtual key: a secret the gateway issued and looks up. Workload identity: a JWT the caller's platform issued and the gateway verifies. Same grant/policy machinery; different trust direction." },
+    { "id": "break-it", "title": "Break it on purpose", "body": "Flip a signature char (401 signature). Wrong audience — what happens when the default token manager answers (401 audience). The stage named in the refusal is the teaching point." }
+  ]
+}

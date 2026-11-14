@@ -1,0 +1,29 @@
+{
+  "schema": "diagram-studio/1",
+  "id": "workload-identity-flow",
+  "title": "Workload identity: the federated agent hop chain",
+  "lede": "The agent's own platform vouches for it; the gateway verifies the vouching and forwards the identity. Simulated in Mock mode — same check order as the live Privilege gateway.",
+  "groups": {
+    "agent": { "label": "Agent (no gateway secret)", "color": "grey" },
+    "idp": { "label": "Identity platform", "color": "amber" },
+    "gateway": { "label": "Gateway", "color": "red" },
+    "backend": { "label": "MCP backend", "color": "blue" }
+  },
+  "nodes": [
+    { "id": "agent", "group": "agent", "label": "Agent" },
+    { "id": "idp", "group": "idp", "label": "IdP (issuer + JWKS)" },
+    { "id": "mint", "group": "idp", "label": "client_credentials → JWT" },
+    { "id": "check", "group": "gateway", "label": "Verify: signature → iss → aud → claims" },
+    { "id": "grant", "group": "gateway", "label": "Agent key grant (tools)" },
+    { "id": "door", "group": "gateway", "label": "Door: Pass Agent Token" },
+    { "id": "backend", "group": "backend", "label": "whoami sees the token unchanged" }
+  ],
+  "edges": [
+    { "from": "agent", "to": "idp", "label": "mint (1)" },
+    { "from": "idp", "to": "mint" },
+    { "from": "agent", "to": "check", "label": "Bearer JWT (2)" },
+    { "from": "check", "to": "grant", "label": "accepted" },
+    { "from": "grant", "to": "door", "label": "tools allowed" },
+    { "from": "door", "to": "backend", "label": "token forwarded (3)" }
+  ]
+}

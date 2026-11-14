@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { jwks, MOCK_ISSUER, MOCK_AUDIENCE } from './keys.js';
 import { mintToken, decodeUnsafe, idpMeta } from './mockIdp.js';
 import { mcpCall, gatewayMeta, validateWorkloadToken } from './mockGateway.js';
-import { getMode, setMode, realAvailable } from './mode.js';
+import { getMode, setMode } from './mode.js';
+import { realConfig, realHowTo, publicInfo, mintRealToken, holdToken, callGateway, passthroughVerdict } from './realGateway.js';
 import { install as installNetguard, report as netguardReport, assertMockZeroOutbound } from './netguard.js';
 import { listDiagrams, getDiagram } from './diagrams.js';
 import { callUpstream } from './upstream.js';
@@ -48,10 +49,23 @@ export function createApp() {
     res.json(d);
   });
   app.get('/api/health', (req, res) => res.json({ ok: true, contract: 'demo-health/1', app: 'workload-identity-lab' }));
-  app.get('/api/info', (req, res) => res.json({ source: getMode(), realAvailable: realAvailable(), idp: idpMeta, gateway: gatewayMeta, simulated: true }));
+  app.get('/api/info', (req, res) => {
+    const cfg = realConfig();
+    res.json({
+      source: getMode(),
+      realAvailable: cfg.ok,
+      realMissing: cfg.ok ? [] : [...cfg.missing, ...cfg.invalid],
+      real: cfg.ok ? publicInfo(cfg) : null, // hosts and ids only, never the secret
+      idp: idpMeta, gateway: gatewayMeta,
+      simulated: getMode() !== 'real',
+    });
+  });
   app.post('/api/mode', (req, res) => {
     const next = req.body?.source;
-    if (next === 'real' && !realAvailable()) return res.status(409).json({ error: 'real_not_configured', message: 'Real mode needs WI_REAL_GATEWAY_URL and WI_REAL_CLIENT_SECRET in the app .env' });
+    if (next === 'real') {
+      const cfg = realConfig();
+      if (!cfg.ok) return res.status(409).json({ error: 'real_not_configured', message: realHowTo(cfg) });
+    }
     if (next !== 'mock' && next !== 'real') return res.status(400).json({ error: 'bad source' });
     setMode(next);
     res.json({ source: getMode() });
@@ -60,8 +74,17 @@ export function createApp() {
   // Mock IdP surface
   app.get('/api/idp/jwks', (req, res) => res.json(jwks()));
   app.get('/api/idp/meta', (req, res) => res.json(idpMeta));
-  app.post('/api/idp/token', (req, res) => {
+  app.post('/api/idp/token', async (req, res) => {
     const { scope, resource, corrupt } = req.body || {};
+    if (getMode() === 'real') {
+      // Real PingFederate. The token stays on the server; the browser gets an opaque handle + decoded claims.
+      const cfg = realConfig();
+      if (!cfg.ok) return jsonError(res, 'real_not_configured', realHowTo(cfg), 409);
+      try {
+        const m = await mintRealToken(cfg, { scope, corrupt });
+        return res.json({ token: holdToken(m.token), held: true, claims: m.claims, audience: m.audience, labelled: 'real PingFederate token (kept on the server)' });
+      } catch (e) { return jsonError(res, e.code || 'idp_error', e.message); }
+    }
     if (corrupt === 'wrong-audience') {
       // Simulate the classic failure: token served by the DEFAULT token manager (aud = enduser-style)
       const t = mintToken({ scope, resource: 'https://other-system.invalid/aud' });
@@ -76,11 +99,25 @@ export function createApp() {
     res.json({ payload: d.payload, note: 'decode without verification — claims are not proof' });
   });
 
-  // Mock gateway door
-  app.post('/api/gateway/:app/mcp', (req, res) => {
+  // Gateway door: the in-process mock, or (Real mode) the actual Privilege gateway
+  app.post('/api/gateway/:app/mcp', async (req, res) => {
     const auth = String(req.headers.authorization || '');
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-    if (getMode() !== 'mock') return res.status(409).json({ error: 'real_mode_active', message: 'Switch to Mock for the in-process gateway' });
+    if (getMode() === 'real') {
+      const cfg = realConfig();
+      if (!cfg.ok) return jsonError(res, 'real_not_configured', realHowTo(cfg), 409);
+      const appName = { 'federated-agent': cfg.agentApp, 'federated-rs': cfg.rsApp }[req.params.app];
+      if (!appName) return jsonError(res, 'unknown_app', `no gateway app mapped for ${req.params.app}`, 404);
+      try {
+        const out = await callGateway(cfg, appName, token, req.body);
+        const _meta = { source: 'real', log: out.log, stage: out.stage, detail: out.detail, gatewayUrl: out.url, requestId: out.requestId, at: out.at };
+        if (req.params.app === 'federated-rs' && out.status === 200) _meta.unchanged = passthroughVerdict(token, out.body);
+        return res.status(out.status).json({ ...out.body, _meta });
+      } catch (e) {
+        // Rule 23: a named failure, with the same _meta shape the page already reads
+        return res.status(502).json({ error: e.code || 'upstream_error', message: e.message, _meta: { source: 'real', stage: e.code || 'upstream_error', detail: e.message, log: e.message } });
+      }
+    }
     const out = mcpCall(token, req.body);
     res.status(out.http).json({ ...out.body, _meta: { log: out.log, stage: out.stage, detail: out.detail, claims: out.claims } });
   });

@@ -5,6 +5,17 @@ import { MOCK_ISSUER, MOCK_AUDIENCE, MOCK_AGENT_ID, MOCK_CLIENT_ID, signJwt } fr
 
 const VALID_SCOPES = ['openid', 'federated:read', 'federated:admin', 'whoami:read'];
 
+// Flip chars in the MIDDLE of the signature: base64url trailing chars carry
+// padding bits, so flipping only the last char can decode to the same bytes.
+export function corruptSignature(token) {
+  const parts = token.split('.');
+  const sig = parts[2];
+  const mid = Math.floor(sig.length / 2);
+  const flip = c => (c === 'A' ? 'B' : 'A');
+  parts[2] = sig.slice(0, mid - 1) + flip(sig[mid - 1]) + flip(sig[mid]) + sig.slice(mid + 1);
+  return parts.join('.');
+}
+
 export function mintToken({ scope, resource, corrupt }) {
   const claims = {
     iss: MOCK_ISSUER,
@@ -15,16 +26,7 @@ export function mintToken({ scope, resource, corrupt }) {
     scope: (scope || 'openid federated:read whoami:read').split(' ').filter(Boolean),
   };
   let token = signJwt(claims);
-  if (corrupt === 'signature') {
-    // flip chars in the MIDDLE of the signature: base64url trailing chars carry
-    // padding bits, so flipping only the last char can decode to the same bytes.
-    const parts = token.split('.');
-    const sig = parts[2];
-    const mid = Math.floor(sig.length / 2);
-    const flip = c => (c === 'A' ? 'B' : 'A');
-    parts[2] = sig.slice(0, mid - 1) + flip(sig[mid - 1]) + flip(sig[mid]) + sig.slice(mid + 1);
-    token = parts.join('.');
-  }
+  if (corrupt === 'signature') token = corruptSignature(token);
   return { token, claims };
 }
 

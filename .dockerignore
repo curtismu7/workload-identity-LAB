@@ -1,0 +1,9 @@
+# The image is built from tracked source only: never bake a secrets file or host build output into it.
+.git
+node_modules
+web/node_modules
+web/dist
+.env
+.env.*
+!.env.example
+*.log

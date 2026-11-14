@@ -32,9 +32,26 @@ docker compose up --build
 
 ## Modes
 - **Mock** (default): in-process IdP + gateway + MCP backend; netguard asserts zero outbound.
-- **Real**: set `WI_REAL_GATEWAY_URL` and `WI_REAL_CLIENT_SECRET` in `.env` beside the compose
-  file (mode 600, gitignored), restart, then toggle Real in the header. Unset → the toggle
-  is disabled and `POST /api/mode {"source":"real"}` answers 409 with a how-to.
+- **Real** (owner-run): the same four steps against the real PingFederate and the real
+  Privilege gateway. Copy `.env.example` to `.env` beside the compose file (gitignored, and kept
+  out of the image by `.dockerignore`), fill in `WI_REAL_GATEWAY_URL`, `WI_REAL_PF_URL`,
+  `WI_REAL_CLIENT_ID` and `WI_REAL_CLIENT_SECRET`, run `docker compose up -d`, then choose Real
+  in the Mode menu. Unset or invalid → the toggle is disabled and `POST /api/mode
+  {"source":"real"}` answers 409 naming the missing variables.
+  - The server mints the token (`client_credentials`, `resource=<agent app URL>`), calls
+    `<gateway>/<app>/mcp` with it, and calls the passthrough app's `whoami`. The client secret
+    and the real token never reach the browser: the page gets an opaque handle and the decoded claims.
+  - Step 3 compares the claims the backend reports with the ones minted, so "token unchanged"
+    is checked, not assumed.
+  - Every upstream failure (PingFederate refusing, gateway unreachable, 5xx) is a named error on
+    the page, never a blank result.
+
+### Proving it went through Privilege (Real mode)
+The banner names the real hosts; step 2 shows the gateway's HTTP status and request id. The proof is
+on the Privilege side: the gateway log line `workload token accepted for key <key> issuer=<iss>
+subject=<sub>` with no `policy denied` beside it, plus the console objects the page's "Show it in
+Privilege" section lists (the Non-Human Identity, the agent in the Agent Registry, the Pass Agent
+Token MCP app). Mock mode leaves nothing in Privilege by design.
 
 ## The real-world reference
 Verified live 2026-11-13 against SE PingFederate + Privilege (see AI-DEMO2
@@ -44,7 +61,7 @@ wrong-audience and garbage tokens refused.
 
 ## Test
 ```bash
-npm test          # node --test, 11 tests
+npm test          # node --test, 21 tests (Real mode runs against local stand-ins for PingFederate and the gateway)
 npm run doctor    # presenter checks
 npm run reset     # clear the run log
 ```

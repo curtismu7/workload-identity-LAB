@@ -16,12 +16,13 @@ export function mintToken({ scope, resource, corrupt }) {
   };
   let token = signJwt(claims);
   if (corrupt === 'signature') {
-    // flip the last char of the signature
+    // flip chars in the MIDDLE of the signature: base64url trailing chars carry
+    // padding bits, so flipping only the last char can decode to the same bytes.
     const parts = token.split('.');
     const sig = parts[2];
-    const last = sig.slice(-1);
-    const flip = c => ({ A:'B','B':'A',a:'b',b:'a' })[c] || (c === 'A' ? 'B' : 'A');
-    parts[2] = sig.slice(0, -1) + flip(last[0]);
+    const mid = Math.floor(sig.length / 2);
+    const flip = c => (c === 'A' ? 'B' : 'A');
+    parts[2] = sig.slice(0, mid - 1) + flip(sig[mid - 1]) + flip(sig[mid]) + sig.slice(mid + 1);
     token = parts.join('.');
   }
   return { token, claims };

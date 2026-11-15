@@ -14,6 +14,7 @@ const api = async (path, body, extraHeaders = {}) => {
 };
 
 const MOCK_SCOPE = 'openid federated:read whoami:read';
+const DIRECT_ONLY_TOOLS = ['GrantAdminTool', 'DeleteAllTool'];
 
 const CONNECTION_NOTE = {
   saved: "The secret is saved on this lab's Docker volume and is never sent to the browser.",
@@ -24,6 +25,16 @@ const CONNECTION_NOTE = {
 const Chip = ({ ok, children }) => (
   <span className={`status-chip ${ok ? 'wi-chip-ok' : 'wi-chip-deny'}`} data-testid={ok ? 'chip-ok' : 'chip-deny'}>{children}</span>
 );
+
+// The direct whoami shows raw token claims (rule 4: tokens shown raw, education) — through
+// JsonPane, which renders everything as inert text and passes visible() over every value.
+const DirectWhoamiPane = ({ response }) => {
+  const backendClaims = (() => {
+    try { return JSON.parse(response?.result?.content?.[0]?.text); } catch { return null; }
+  })();
+  if (!backendClaims) return null;
+  return <JsonPane value={backendClaims.receivedClaims || backendClaims} testId="direct-whoami-claims" label="what the direct backend received" />;
+};
 
 export default function App() {
   const [info, setInfo] = useState(null);
@@ -41,6 +52,10 @@ export default function App() {
   const [traces, setTraces] = useState([]); // what the gateway did, one entry per gateway call
   const [runs, setRuns] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [path, setPath] = useState('gateway'); // which door the Run flow walks: 'gateway' | 'direct'
+  const [directResult, setDirectResult] = useState(null); // direct-door tools/list result
+  const [directWhoami, setDirectWhoami] = useState(null);
+  const [breakResult, setBreakResult] = useState(null); // Break-it outcomes: {tampered, escalated}
   const [error, setError] = useState('');
   const [showConnect, setShowConnect] = useState(false); // the Real button's form
   const [form, setForm] = useState({ gatewayUrl: '', pfUrl: '', clientId: '', clientSecret: '' });
@@ -78,7 +93,7 @@ export default function App() {
   };
 
   // Results belong to the mode that produced them: a Real run must never be shown under the Simulated caption
-  const clearResults = () => { setClaims(null); setToken(null); setTokenHeld(false); setGatewayResult(null); setWhoami(null); setControl(null); setTraces([]); };
+  const clearResults = () => { setClaims(null); setToken(null); setTokenHeld(false); setGatewayResult(null); setWhoami(null); setControl(null); setTraces([]); setDirectResult(null); setDirectWhoami(null); setBreakResult(null); };
 
   const switchMode = async (next) => {
     setError('');
@@ -129,9 +144,9 @@ export default function App() {
     clearResults();
   };
 
-  const runDemo = async (scopeToUse = scope) => {
+  const runDemo = async (scopeToUse = scope, pathToUse = path) => {
     setBusy(true); setError('');
-    setClaims(null); setToken(null); setTokenHeld(false); setGatewayResult(null); setWhoami(null); setControl(null); setTraces([]);
+    setClaims(null); setToken(null); setTokenHeld(false); setGatewayResult(null); setWhoami(null); setControl(null); setTraces([]); setDirectResult(null); setDirectWhoami(null); setBreakResult(null);
     const addTrace = (step, title, r) => {
       if (r.json?._meta?.trace) setTraces(prev => [...prev, { step, title, status: r.status, trace: r.json._meta.trace }]);
     };
@@ -149,6 +164,21 @@ export default function App() {
       setTokenHeld(Boolean(mint.json.held));
       setClaims(mint.json.claims);
       await logRun('1 mint', true, `IdP issued a token (aud=${mint.json.claims?.aud})`);
+      if (pathToUse === 'direct') {
+        // The ungoverned lane: the same token, straight to the backend.
+        const d = await api('/api/direct/backend/mcp',
+          { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+          { authorization: `Bearer ${mint.json.token}` });
+        setDirectResult({ status: d.status, json: d.json });
+        await logRun('2 direct tools/list', d.status === 200,
+          d.status === 200 ? `direct backend accepted: ${d.json._meta?.log}` : `refused (${d.json._meta?.stage}): ${d.json._meta?.detail}`);
+        const dw = await api('/api/direct/backend/mcp',
+          { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'whoami', arguments: {} } },
+          { authorization: `Bearer ${mint.json.token}` });
+        setDirectWhoami({ status: dw.status, json: dw.json });
+        await logRun('3 direct whoami', dw.status === 200, dw.status === 200 ? 'direct backend answered with the token claims as presented' : 'refused');
+        return;
+      }
       // Step 2: gateway tools/list
       const gw = await api('/api/gateway/federated-agent/mcp',
         { jsonrpc: '2.0', id: 1, method: 'tools/list' },
@@ -183,6 +213,31 @@ export default function App() {
     } finally {
       setBusy(false);
     }
+  };
+
+  // Break it (direct path): tampered signature -> refused only at signature level;
+  // scope escalation -> the direct backend lets a token minted with federated:admin straight through.
+  const breakIt = async (kind) => {
+    setBusy(true); setError('');
+    try {
+      if (kind === 'tampered') {
+        const mint = await api('/api/idp/token', { scope, corrupt: 'signature' });
+        if (mint.status !== 200) { setError('Could not mint the tampered token'); return; }
+        const r = await api('/api/direct/backend/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/list' }, { authorization: `Bearer ${mint.json.token}` });
+        setBreakResult(prev => ({ ...prev, tampered: { status: r.status, json: r.json } }));
+        await logRun('break: tampered token', r.status === 401, r.status === 401
+          ? `direct backend refused it at ${r.json._meta?.stage}: ${r.json._meta?.detail}`
+          : `unexpected ${r.status}`);
+      } else {
+        const mint = await api('/api/idp/token', { scope: 'federated:admin' });
+        if (mint.status !== 200) { setError('Could not mint the escalated token'); return; }
+        const r = await api('/api/direct/backend/mcp', { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'GrantAdminTool', arguments: {} } }, { authorization: `Bearer ${mint.json.token}` });
+        setBreakResult(prev => ({ ...prev, escalated: { status: r.status, json: r.json } }));
+        await logRun('break: scope escalation', true, r.status === 200
+          ? 'the direct backend EXECUTED GrantAdminTool — no grant to check it against (the gateway path refuses this)'
+          : `unexpected ${r.status}`);
+      }
+    } finally { setBusy(false); }
   };
 
   const reset = async () => {
@@ -240,6 +295,15 @@ export default function App() {
                 <option value="signature">flip a signature char</option>
                 <option value="wrong-audience">wrong audience (token manager mix-up)</option>
               </select>
+            </div>
+            <div className="field-row">
+              <label id="path-label">Path</label>
+              <div className="wi-seg" role="radiogroup" aria-labelledby="path-label">
+                <button type="button" role="radio" aria-checked={path === 'gateway'} data-testid="path-privilege"
+                  className={path === 'gateway' ? 'wi-seg-on' : ''} onClick={() => setPath('gateway')}>Privilege gateway</button>
+                <button type="button" role="radio" aria-checked={path === 'direct'} data-testid="path-direct"
+                  className={path === 'direct' ? 'wi-seg-on' : ''} onClick={() => setPath('direct')}>Direct (no gateway)</button>
+              </div>
             </div>
             <div className="wi-actions">
               <button className="primary" data-testid="run-btn" onClick={() => runDemo()} disabled={busy}>
@@ -312,6 +376,40 @@ export default function App() {
               <div className="wi-step"><span className="wi-step-num">4</span>
                 <div><strong>Control</strong> — garbage bearer.
                   {control && (control === 401 ? <Chip ok>401 refused</Chip> : <Chip ok={false}>{control}</Chip>)}</div></div>
+              {path === 'direct' && (
+                <>
+                  <div className="wi-step"><span className="wi-step-num">2</span>
+                    <div><strong>Direct tools/list</strong> — the same token, straight to the backend.
+                      {directResult && (directResult.status === 200 ? <Chip ok>200 accepted</Chip> : <Chip ok={false}>{directResult.status} {directResult.json?._meta?.stage}</Chip>)}
+                      {directResult && <div className="wi-claims" data-testid="direct-log">{directResult.json?._meta?.log}</div>}
+                      {directResult?.status === 200 && <div data-testid="direct-tool-list">{(directResult.json?.result?.tools || []).map(t => t.name).join(', ')}</div>}
+                    </div></div>
+                  <div className="wi-step"><span className="wi-step-num">3</span>
+                    <div><strong>Direct whoami</strong> — raw claims, no gateway enrichment.
+                      {directWhoami && (directWhoami.status === 200 ? <Chip ok>200</Chip> : <Chip ok={false}>{directWhoami.status}</Chip>)}
+                      {directWhoami?.status === 200 && <DirectWhoamiPane response={directWhoami.json} />}
+                    </div></div>
+                  <div className="wi-break">
+                    <h3>Break it</h3>
+                    <div className="wi-actions">
+                      <button type="button" data-testid="break-tampered" onClick={() => breakIt('tampered')} disabled={busy}>Tampered token → direct door</button>
+                      <button type="button" data-testid="break-escalate" onClick={() => breakIt('escalate')} disabled={busy}>Scope escalation → direct door</button>
+                    </div>
+                    {breakResult?.tampered && (breakResult.tampered.status === 401
+                      ? <p className="wi-break-outcome" data-testid="break-tampered-outcome">
+                          <Chip ok={false}>401 {breakResult.tampered.json?._meta?.stage}</Chip>{' '}
+                          rejected at the signature check only — the direct backend still verifies what signs the token, nothing else.
+                        </p>
+                      : <p className="wi-break-outcome" data-testid="break-tampered-outcome"><Chip ok={false}>{breakResult.tampered.status}</Chip> unexpected</p>)}
+                    {breakResult?.escalated && (breakResult.escalated.status === 200
+                      ? <p className="wi-break-outcome" data-testid="break-escalate-outcome">
+                          <Chip ok>200 executed</Chip>{' '}
+                          the backend ran <code>GrantAdminTool</code> for a token minted with scope <code>federated:admin</code> — the gateway grant has no such scope and would refuse this. Ungoverned does not mean unsigned; it means unmanaged.
+                        </p>
+                      : <p className="wi-break-outcome" data-testid="break-escalate-outcome"><Chip ok={false}>{breakResult.escalated.status}</Chip> unexpected</p>)}
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -328,6 +426,25 @@ export default function App() {
                 <JsonPane value={claims} testId="claims-view" label="IdP token claims" />
               </>
             )}
+          </div>
+
+          <div className="wi-card" data-testid="comparison-card">
+            <h2>What the direct path misses</h2>
+            <p className="muted">
+              The direct path is an agent calling the backend with no gateway in between — in production that is
+              exactly what happens when an agent holds a token for the backend directly. The gateway path is what
+              you add to govern it. Both lanes here are in-process mocks; nothing real is called.
+            </p>
+            <table className="lab-table">
+              <thead><tr><th>Control</th><th>Privilege gateway</th><th>Direct (no gateway)</th></tr></thead>
+              <tbody>
+                <tr><td>Grant enforcement</td><td>3 tools granted</td><td>all 5 tools, incl. GrantAdminTool and DeleteAllTool</td></tr>
+                <tr><td>Audience binding</td><td>bound to the door (<code>aud</code> must match)</td><td>whatever <code>aud</code> the token carries</td></tr>
+                <tr><td>Required claims</td><td><code>act.sub</code> + <code>client_id</code> pinned</td><td>none</td></tr>
+                <tr><td>Pass Agent Token</td><td>forwarded and verified end to end</td><td>the backend verifies the token itself, that is all</td></tr>
+                <tr><td>Audit</td><td>per-call log line in the gateway</td><td>backend log only</td></tr>
+              </tbody>
+            </table>
           </div>
 
           <div className="wi-card wi-card-wide">

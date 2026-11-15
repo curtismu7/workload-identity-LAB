@@ -64,6 +64,19 @@ body { font-size: 1.125rem; }
 
 /* Raw text blocks wrap instead of scrolling sideways, so nothing is cut off */
 .wi-claims { font-family: ui-monospace, monospace; font-size: 0.875rem; line-height: 1.5; background: var(--surface-2, #eff0f1); color: var(--text, inherit); padding: 12px 14px; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--border, #d8dde3); }
+
+/* Path segmented control (theme tokens, visible borders in both themes) */
+.wi-seg { display: inline-flex; border: 1px solid var(--control-border, var(--border, #d8dde3)); border-radius: 8px; overflow: hidden; }
+.wi-seg button { min-height: 44px; padding: 8px 18px; border: 0; border-radius: 0; background: var(--surface, #fff); color: var(--text); font: inherit; cursor: pointer; }
+.wi-seg button + button { border-left: 1px solid var(--control-border, var(--border, #d8dde3)); }
+.wi-seg button.wi-seg-on { background: var(--accent, #b3232a); color: #fff; font-weight: 700; }
+.wi-seg button:focus-visible { outline: 2px solid var(--accent, #b3232a); outline-offset: -3px; }
+
+/* Break-it outcomes */
+.wi-break { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border, #d8dde3); }
+.wi-break h3 { margin: 0 0 10px; }
+.wi-break-outcome { margin: 12px 0 0; line-height: 1.5; overflow-wrap: anywhere; }
+.wi-break-outcome .status-chip { margin-left: 0; }
 .wi-runlog { display: flex; flex-direction: column; gap: 12px; max-height: 320px; overflow-y: auto; font-size: 0.9375rem; }
 .wi-chip-ok { background: #e6f4ea; color: #1e7a34; border: 1px solid #b7dfc2; }
 .wi-chip-deny { background: #fdecec; color: #a12622; border: 1px solid #f3c2c0; }

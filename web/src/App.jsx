@@ -435,6 +435,7 @@ export default function App() {
               exactly what happens when an agent holds a token for the backend directly. The gateway path is what
               you add to govern it. Both lanes here are in-process mocks; nothing real is called.
             </p>
+            <div className="lab-table-wrap">
             <table className="lab-table">
               <thead><tr><th>Control</th><th>Privilege gateway</th><th>Direct (no gateway)</th></tr></thead>
               <tbody>
@@ -445,6 +446,7 @@ export default function App() {
                 <tr><td>Audit</td><td>per-call log line in the gateway</td><td>backend log only</td></tr>
               </tbody>
             </table>
+            </div>
           </div>
 
           <div className="wi-card wi-card-wide">

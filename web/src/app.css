@@ -52,7 +52,8 @@ body { font-size: 1.125rem; }
 .wi-prove code { overflow-wrap: anywhere; }
 
 /* Comparison table */
-.lab-table { width: 100%; border-collapse: collapse; margin: 0 0 14px; }
+.lab-table-wrap { overflow-x: auto; max-width: 100%; }
+.lab-table { width: 100%; border-collapse: collapse; margin: 0 0 14px; min-width: 480px; }
 .lab-table th, .lab-table td { text-align: left; vertical-align: top; padding: 10px 14px 10px 0; border-bottom: 1px solid var(--border); }
 .lab-table th { color: var(--text); }
 

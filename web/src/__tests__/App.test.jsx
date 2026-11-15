@@ -7,8 +7,10 @@ const mockJson = (status, body) => ({ status, json: async () => body });
 global.fetch = vi.fn();
 
 import App from '../App.jsx';
+import { setJsonView } from '../components/JsonPane.jsx';
 
 beforeEach(() => {
+  setJsonView('form'); // the Form | JSON choice is shared module state: start every test on Form
   fetch.mockReset();
   fetch.mockImplementation((url, init) => {
     if (String(url).includes('/api/info')) return Promise.resolve(mockJson(200, { source: 'mock', realAvailable: false, idp: {}, gateway: {}, simulated: true }));
@@ -116,6 +118,9 @@ describe('Workload Identity Lab', () => {
     expect(screen.getByTestId('trace-2-request')).toHaveTextContent('POST https://gateway.workload-lab.invalid/federated-agent/mcp');
     expect(screen.getByTestId('trace-2-request')).toHaveTextContent('shortened');
     expect(screen.getByTestId('trace-2-response')).toHaveTextContent('HTTP 401');
+    // the whole transcript goes to the shared pane: the head stays text, the JSON body gets its own Form | JSON pane
+    expect(screen.getByTestId('trace-2-request').querySelector('.jwire .jsonbox__toggle')).toBeTruthy();
+    expect(screen.getByTestId('trace-2-response').querySelector('.jwire .jsonbox__toggle')).toBeTruthy();
     expect(screen.getByTestId('gateway-trace-basis')).toHaveTextContent(/Simulated/);
   });
 
@@ -161,16 +166,18 @@ describe('Workload Identity Lab', () => {
     expect(await screen.findByTestId('raw-token-copy-state')).toHaveTextContent(/Copied|Select and copy/);
   });
 
-  it('json panes offer Formatted | Raw and render claims in both', async () => {
+  it('json panes offer Form | JSON and render claims in both', async () => {
     render(<App />);
     await userEvent.click(await screen.findByTestId('run-btn'));
     await waitFor(() => expect(screen.getByTestId('claims-view')).toBeTruthy());
-    // Formatted is the default view: a form with a label per field
+    expect(screen.getByTestId('claims-view-formatted')).toHaveTextContent(/^Form$/);
+    expect(screen.getByTestId('claims-view-raw')).toHaveTextContent(/^JSON$/);
+    // Form is the default view: a form with a label per field
     expect(screen.getByTestId('claims-view')).toHaveTextContent('iss');
-    // switch to Raw: the exact JSON text, coloured
+    // switch to JSON: the exact JSON text, coloured
     await userEvent.click(screen.getByTestId('claims-view-raw'));
     expect(screen.getByTestId('claims-view')).toHaveTextContent('"iss"');
-    // back to Formatted
+    // back to Form
     await userEvent.click(screen.getByTestId('claims-view-formatted'));
     expect(screen.getByTestId('claims-view')).toHaveTextContent('iss');
   });

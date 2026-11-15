@@ -389,6 +389,38 @@ describe('Workload Identity Lab', () => {
       expect(screen.getByTestId('connect-client')).toHaveValue('pf-client');
     });
 
+    it('a saved secret shows masked (last 4 only); Change reopens the form with a blank secret that keeps it', async () => {
+      let sent;
+      const base = fetch.getMockImplementation();
+      fetch.mockImplementation((url, init) => {
+        const u = String(url);
+        if (u.includes('/api/info')) return Promise.resolve(mockJson(200, realInfo({ realSecret: { set: true, ends: '…LEAK' } })));
+        if (u.includes('/api/real/connect')) { sent = JSON.parse(init.body); return Promise.resolve(mockJson(200, { ok: true, persisted: true })); }
+        return base(url, init);
+      });
+      render(<App />);
+      expect(await screen.findByTestId('real-secret-hint')).toHaveTextContent('Client secret: •••••• saved (ends …LEAK).');
+      expect(document.body.textContent).not.toContain(SECRET);
+      await userEvent.click(screen.getByTestId('real-change'));
+      const secret = await screen.findByTestId('connect-secret');
+      expect(secret).toHaveValue('');
+      expect(secret.getAttribute('type')).toBe('password');
+      expect(secret.getAttribute('placeholder')).toBe('•••••• saved (ends …LEAK), leave blank to keep it');
+      expect(screen.getByTestId('connect-client')).toHaveValue('pf-client');
+      await userEvent.click(screen.getByTestId('connect-btn'));
+      await waitFor(() => expect(sent).toBeTruthy());
+      expect(sent.clientSecret).toBe('');
+      await waitFor(() => expect(screen.queryByTestId('connect-form')).toBeNull());
+    });
+
+    it('a short saved secret shows no characters', async () => {
+      const base = fetch.getMockImplementation();
+      fetch.mockImplementation((url, init) => String(url).includes('/api/info')
+        ? Promise.resolve(mockJson(200, realInfo({ realSecret: { set: true, ends: null } }))) : base(url, init));
+      render(<App />);
+      expect(await screen.findByTestId('real-secret-hint')).toHaveTextContent(/^Client secret: •••••• saved\.$/);
+    });
+
     it('forget asks the server to drop the saved connection and the page goes back to Mock', async () => {
       const base = fetch.getMockImplementation();
       let forgotten = false;

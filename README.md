@@ -40,6 +40,8 @@ docker compose up --build
   mode-600 file on the `wi-real-config` Docker volume (`/data`), so it survives a restart; it is never in the
   repo, the image, the browser, an API response or a log. **Forget the saved connection** removes it. If the
   volume cannot be written the connection is kept in memory for that run and the page says so.
+  Once saved, the page shows only `Client secret: •••••• saved (ends …abcd)` (the last 4 characters, and none
+  for a secret shorter than 16); **Change** reopens the form, where a blank secret keeps the saved one.
   - Alternative: set `WI_REAL_GATEWAY_URL`, `WI_REAL_PF_URL`, `WI_REAL_CLIENT_ID` and
     `WI_REAL_CLIENT_SECRET` in a `.env` beside the compose file (gitignored, kept out of the image by
     `.dockerignore`; see `.env.example`). A complete saved connection wins over `.env`. The three

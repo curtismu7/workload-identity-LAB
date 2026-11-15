@@ -159,3 +159,28 @@ test('a saved connection wins over the app .env, and forgetting it falls back to
     assert.equal(info.real.pfHost, 'env-pf.example.com');
   });
 });
+
+test('the page learns only that a secret is saved and its last 4 characters; a blank secret keeps the saved one', async () => {
+  await withApp(async ({ post, get, json, form, seen, file }) => {
+    assert.deepEqual(json(await get('/api/info')).realSecret, { set: false, ends: null });
+    assert.equal((await post('/api/real/connect', form())).status, 200);
+    const info = await get('/api/info');
+    assert.deepEqual(json(info).realSecret, { set: true, ends: '…LEAK' });
+    assert.ok(!info.text.includes(SECRET), 'the secret must not appear in a response');
+    // Change the client ID's neighbours without retyping the secret: the saved secret is reused and checked again
+    const again = await post('/api/real/connect', form({ clientSecret: '' }));
+    assert.equal(again.status, 200);
+    assert.equal(seen.length, 2);
+    assert.equal(seen[1].auth, seen[0].auth, 'PingFederate is called with the saved secret');
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).WI_REAL_CLIENT_SECRET, SECRET);
+    // A short secret shows no characters at all
+    process.env.WI_REAL_CLIENT_SECRET = 'short-secret';
+    Object.assign(process.env, { WI_REAL_GATEWAY_URL: 'https://gw.example.com', WI_REAL_PF_URL: 'https://pf.example.com', WI_REAL_CLIENT_ID: 'env-client' });
+    forgetConnection();
+    assert.deepEqual(json(await get('/api/info')).realSecret, { set: true, ends: null });
+    // With only the app .env (nothing saved), a blank secret is still refused
+    const blank = await post('/api/real/connect', form({ clientSecret: '' }));
+    assert.equal(blank.status, 400);
+    assert.match(json(blank).message, /client secret/);
+  });
+});

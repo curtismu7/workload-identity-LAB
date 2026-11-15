@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import TopMenu, { applyFontSize } from './top-menu/TopMenu.jsx';
 import Diagram from './components/Diagram.jsx';
 import JsonPane from './components/JsonPane.jsx';
+import JwtBox from './components/JwtBox.jsx';
 import GatewayTrace from './components/GatewayTrace.jsx';
 
 const api = async (path, body, extraHeaders = {}) => {
@@ -319,7 +320,7 @@ export default function App() {
             {token
               ? (tokenHeld
                 ? <p className="muted" data-testid="token-held">The real token stays on the server and is never shown here. The decoded claims below are what the gateway checks.</p>
-                : <div className="wi-claims" data-testid="raw-token">{token}</div>)
+                : <JwtBox value={token} testId="raw-token" />)
               : <p className="muted">Press Run to mint one.</p>}
             {claims && (
               <>

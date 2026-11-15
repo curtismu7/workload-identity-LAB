@@ -13,10 +13,26 @@ beforeEach(() => {
   fetch.mockImplementation((url, init) => {
     if (String(url).includes('/api/info')) return Promise.resolve(mockJson(200, { source: 'mock', realAvailable: false, idp: {}, gateway: {}, simulated: true }));
     if (String(url).includes('/api/runs')) return Promise.resolve(mockJson(200, { runs: [] }));
-    if (String(url).includes('/api/idp/token')) return Promise.resolve(mockJson(200, { token: 'h.sig.s', claims: { iss: 'https://idp.workload-lab.invalid', aud: 'https://gateway.workload-lab.invalid/federated-agent/mcp', sub: 'demo-agent-1', act: { sub: 'demo-agent-1' } } }));
+    if (String(url).includes('/api/idp/token')) {
+      const req = init && JSON.parse(init.body);
+      const token = req?.corrupt === 'signature'
+        ? 'eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJ0ZXN0In0.tamperED'
+        : 'eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJ0ZXN0In0.fakesig';
+      return Promise.resolve(mockJson(200, { token, claims: { iss: 'https://idp.workload-lab.invalid', aud: 'https://gateway.workload-lab.invalid/federated-agent/mcp', sub: 'demo-agent-1', act: { sub: 'demo-agent-1' } } }));
+    }
+    if (String(url).includes('/api/direct/backend/mcp')) {
+      const auth = init?.headers?.authorization || '';
+      const VALID = 'Bearer eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJ0ZXN0In0.fakesig';
+      const method = init && JSON.parse(init.body).method;
+      const params = (init && JSON.parse(init.body).params) || {};
+      if (auth !== VALID) return Promise.resolve(mockJson(401, { error: 'unauthorized', stage: 'signature', detail: 'signature verification failed', _meta: { lane: 'direct', log: 'direct backend rejected token: signature verification failed' } }));
+      if (method === 'tools/list') return Promise.resolve(mockJson(200, { jsonrpc: '2.0', id: 1, result: { tools: [{ name: 'ListIndexTool' }, { name: 'SearchIndexTool' }, { name: 'CountTool' }, { name: 'GrantAdminTool' }, { name: 'DeleteAllTool' }] }, _meta: { lane: 'direct', log: 'direct backend accepted the token (signature verified) and listed all 5 tools — no grant to check' } }));
+      if (params.name === 'whoami') return Promise.resolve(mockJson(200, { jsonrpc: '2.0', id: 2, result: { content: [{ type: 'text', text: JSON.stringify({ receivedClaims: { sub: 'demo-agent-1', scope: 'federated:admin' } }) }] }, _meta: { lane: 'direct', log: 'direct backend answered whoami' } }));
+      return Promise.resolve(mockJson(200, { jsonrpc: '2.0', id: 2, result: { content: [{ type: 'text', text: `tool ${params.name} executed (the direct backend has no grant to check)` }] }, _meta: { lane: 'direct', log: `direct backend executed tool ${params.name}` } }));
+    }
     if (String(url).includes('/api/gateway/federated-agent/mcp')) {
       const auth = init?.headers?.authorization || '';
-      return Promise.resolve(auth === 'Bearer h.sig.s'
+      return Promise.resolve(auth === 'Bearer eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJ0ZXN0In0.fakesig'
         ? mockJson(200, { jsonrpc: '2.0', id: 1, result: { tools: [{ name: 'ListIndexTool' }, { name: 'SearchIndexTool' }, { name: 'CountTool' }] }, _meta: { log: 'workload token accepted for key demo-federated-agent' } })
         : mockJson(401, { error: 'unauthorized', stage: 'signature', detail: 'signature verification failed', _meta: { log: 'workload token rejected' } }));
     }
@@ -83,8 +99,9 @@ describe('Workload Identity Lab', () => {
       ],
       record: 'workload token rejected: audience mismatch',
     };
+    const MINTED = 'eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJ0ZXN0In0.fakesig';
     fetch.mockImplementation((url, init) => {
-      if (String(url).includes('/api/gateway/federated-agent/mcp') && init?.headers?.authorization === 'Bearer h.sig.s') return Promise.resolve(mockJson(401, { error: 'unauthorized', _meta: { log: 'x', stage: 'audience', trace } }));
+      if (String(url).includes('/api/gateway/federated-agent/mcp') && init?.headers?.authorization === `Bearer ${MINTED}`) return Promise.resolve(mockJson(401, { error: 'unauthorized', _meta: { log: 'x', stage: 'audience', trace } }));
       return base(url, init);
     });
     render(<App />);
@@ -133,6 +150,17 @@ describe('Workload Identity Lab', () => {
     expect(screen.getByTestId('whoami-claims')).toHaveTextContent('demo-agent-1');
   });
 
+  it('the raw JWT renders in a full-size box with a Copy button', async () => {
+    render(<App />);
+    await userEvent.click(await screen.findByTestId('run-btn'));
+    const box = await screen.findByTestId('raw-token-text');
+    expect(box.textContent).toMatch(/^eyJ/);
+    const copy = screen.getByTestId('raw-token-copy');
+    expect(copy).toBeTruthy();
+    await userEvent.click(copy);
+    expect(await screen.findByTestId('raw-token-copy-state')).toHaveTextContent(/Copied|Select and copy/);
+  });
+
   it('json panes offer Formatted | Raw and render claims in both', async () => {
     render(<App />);
     await userEvent.click(await screen.findByTestId('run-btn'));
@@ -150,7 +178,7 @@ describe('Workload Identity Lab', () => {
   it('negative case shows the refusal stage', async () => {
     fetch.mockImplementation((url, init) => {
       if (String(url).includes('/api/gateway/federated-agent/mcp')) return Promise.resolve(mockJson(401, { error: 'unauthorized', stage: 'audience', detail: 'aud mismatch', _meta: { log: 'rejected: audience mismatch' } }));
-      if (String(url).includes('/api/idp/token')) return Promise.resolve(mockJson(200, { token: 'h.sig.s', claims: { iss: 'i', aud: 'other' } }));
+      if (String(url).includes('/api/idp/token')) return Promise.resolve(mockJson(200, { token: 'eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJ0ZXN0In0.fakesig', claims: { iss: 'i', aud: 'other' } }));
       if (String(url).includes('/api/runs')) return Promise.resolve(mockJson(200, { runs: [] }));
       if (String(url).includes('/api/diagrams/')) return Promise.resolve(mockJson(200, { id: 'x', title: 't', lede: 'l', groups: {}, nodes: [], edges: [] }));
       return Promise.resolve(mockJson(200, { source: 'mock', realAvailable: false }));
@@ -158,6 +186,50 @@ describe('Workload Identity Lab', () => {
     render(<App />);
     await userEvent.click(await screen.findByTestId('run-btn'));
     await waitFor(() => expect(screen.getAllByText('401').length).toBeGreaterThan(0));
+  });
+
+  describe('the dual-path comparison (gateway vs direct)', () => {
+    it('the path toggle renders and defaults to Privilege gateway', async () => {
+      render(<App />);
+      expect(await screen.findByTestId('path-privilege')).toBeTruthy();
+      expect(screen.getByTestId('path-direct')).toBeTruthy();
+      expect(screen.getByTestId('path-privilege').getAttribute('aria-checked')).toBe('true');
+      expect(screen.getByTestId('path-direct').getAttribute('aria-checked')).toBe('false');
+    });
+
+    it('flipping to Direct and running shows the direct tool list including GrantAdminTool', async () => {
+      render(<App />);
+      await userEvent.click(await screen.findByTestId('path-direct'));
+      expect(screen.getByTestId('path-direct').getAttribute('aria-checked')).toBe('true');
+      await userEvent.click(screen.getByTestId('run-btn'));
+      await waitFor(() => expect(screen.getByTestId('direct-tool-list')).toHaveTextContent('GrantAdminTool'));
+      expect(screen.getByTestId('direct-tool-list')).toHaveTextContent('DeleteAllTool');
+      expect(screen.getByTestId('direct-whoami-claims')).toHaveTextContent('demo-agent-1');
+      expect(screen.getByTestId('direct-log')).toHaveTextContent(/no grant to check/);
+    });
+
+    it('the comparison card renders all 5 rows and the honesty note', async () => {
+      render(<App />);
+      const card = await screen.findByTestId('comparison-card');
+      expect(card).toHaveTextContent(/no gateway in between.*in production that is exactly what happens/i);
+      expect(card).toHaveTextContent('Grant enforcement');
+      expect(card).toHaveTextContent('Audience binding');
+      expect(card).toHaveTextContent('Required claims');
+      expect(card).toHaveTextContent('Pass Agent Token');
+      expect(card).toHaveTextContent('Audit');
+      expect(card).toHaveTextContent('GrantAdminTool');
+    });
+
+    it('the Break-it buttons render their outcomes', async () => {
+      render(<App />);
+      await userEvent.click(await screen.findByTestId('path-direct'));
+      await userEvent.click(screen.getByTestId('run-btn'));
+      await userEvent.click(await screen.findByTestId('break-tampered'));
+      expect(await screen.findByTestId('break-tampered-outcome')).toHaveTextContent(/signature check only/);
+      await userEvent.click(screen.getByTestId('break-escalate'));
+      expect(await screen.findByTestId('break-escalate-outcome')).toHaveTextContent(/GrantAdminTool/);
+      expect(screen.getByTestId('break-escalate-outcome')).toHaveTextContent(/unmanaged/);
+    });
   });
 
   describe('the Real button', () => {

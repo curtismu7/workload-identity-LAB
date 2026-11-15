@@ -11,6 +11,7 @@ import { mockTrace, realTrace, realFailureTrace } from './trace.js';
 import { install as installNetguard, report as netguardReport, assertMockZeroOutbound } from './netguard.js';
 import { listDiagrams, getDiagram } from './diagrams.js';
 import { callUpstream } from './upstream.js';
+import { directCall, DIRECT_ONLY_TOOLS } from './directDoor.js';
 
 // Rule 23: every /api route's upstream errors map to structured JSON.
 const jsonError = (res, code, message, status = 502) => res.status(status).json({ error: code, message });
@@ -153,7 +154,18 @@ export function createApp() {
       }
     }
     const out = mcpCall(token, req.body);
-    res.status(out.http).json({ ...out.body, _meta: { log: out.log, stage: out.stage, detail: out.detail, claims: out.claims, trace: mockTrace({ app: req.params.app, token, rpc: req.body, out }) } });
+    res.status(out.http).json({ ...out.body, _meta: { lane: 'gateway', log: out.log, stage: out.stage, detail: out.detail, claims: out.claims, trace: mockTrace({ app: req.params.app, token, rpc: req.body, out }) } });
+  });
+
+  // The DIRECT door: the same token, straight to the MCP backend, no gateway in between.
+  // The backend verifies only the JWT signature and lifetime — no audience binding, no
+  // required-claims pinning, no grant/tool filtering, no Pass Agent Token distinction.
+  app.post('/api/direct/:app/mcp', (req, res) => {
+    const auth = String(req.headers.authorization || '');
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+    if (getMode() === 'real') return jsonError(res, 'real_not_configured', 'The direct door is a mock-only comparison path; switch to Mock mode.', 409);
+    const out = directCall(token, req.body);
+    res.status(out.http).json({ ...out.body, _meta: { lane: 'direct', log: out.log, stage: out.stage, claims: out.claims, directOnlyTools: DIRECT_ONLY_TOOLS } });
   });
 
   // Validate-only (what the gateway checks, step by step)

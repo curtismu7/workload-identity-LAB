@@ -6,8 +6,9 @@
 import { randomBytes } from 'node:crypto';
 import { callUpstream } from './upstream.js';
 import { decodeUnsafe, corruptSignature } from './mockIdp.js';
+import { REAL_VARS, effectiveEnv } from './realStore.js';
 
-export const REAL_VARS = ['WI_REAL_GATEWAY_URL', 'WI_REAL_PF_URL', 'WI_REAL_CLIENT_ID', 'WI_REAL_CLIENT_SECRET'];
+export { REAL_VARS };
 
 // https only, except a loopback http URL (the tests' stand-ins). Returns the URL without a trailing slash.
 function cleanBase(raw) {
@@ -18,7 +19,7 @@ function cleanBase(raw) {
   return u.origin + u.pathname.replace(/\/+$/, '');
 }
 
-export function realConfig(env = process.env) {
+export function realConfig(env = effectiveEnv()) {
   const missing = REAL_VARS.filter(k => !String(env[k] || '').trim());
   if (missing.length) return { ok: false, missing, invalid: [] };
   const gateway = cleanBase(env.WI_REAL_GATEWAY_URL);
@@ -39,8 +40,9 @@ export function realConfig(env = process.env) {
 }
 
 export function realHowTo(cfg) {
-  if (cfg.invalid?.length) return `Real mode needs https URLs for ${cfg.invalid.join(', ')} in the app .env`;
-  return `Real mode needs ${cfg.missing.join(', ')} in the app .env (see .env.example)`;
+  const how = 'Click the Real button on the page to connect (or set them in the app .env, see .env.example).';
+  if (cfg.invalid?.length) return `Real mode needs https URLs for ${cfg.invalid.join(', ')}. ${how}`;
+  return `Real mode needs ${cfg.missing.join(', ')}. ${how}`;
 }
 
 // Safe to send to the browser: no secret.

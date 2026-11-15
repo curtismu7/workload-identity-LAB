@@ -8,9 +8,15 @@ services:
     environment:
       - PORT=7816
       - LAB_ALLOWED_HOSTS=localhost,127.0.0.1,local.ping-devops.com,workload-identity-lab,workload-identity-lab.local.ping-devops.com
-    # Real mode (owner-only): the four WI_REAL_* values live in the app's own .env, never committed
-    # and never built into the image (.dockerignore). See .env.example. Optional: Mock runs without it.
+    # Real mode (owner-only): click Real on the page and paste the PingFederate client secret once. It is saved
+    # on the volume below (mode 600), never in the repo or the image. Alternatively the four WI_REAL_* values
+    # can live in the app's own .env (never committed, kept out of the image by .dockerignore; see .env.example).
     env_file:
       - path: .env
         required: false
+    volumes:
+      - wi-real-config:/data
     read_only: false
+
+volumes:
+  wi-real-config:

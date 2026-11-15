@@ -40,6 +40,7 @@ describe('Workload Identity Lab', () => {
     expect(screen.getByTestId('console-map')).toHaveTextContent(/required claims/i);
     expect(screen.getByTestId('proof-log-line')).toHaveTextContent('workload token accepted for key');
     expect(screen.getByTestId('proof-mock-note')).toHaveTextContent(/nothing leaves this page/i);
+    expect(screen.getByTestId('proof-mock-note')).toHaveTextContent('Click Run through Privilege (Real)');
   });
 
   it('real mode: the banner names the hosts, the real token is never shown, the proof note names the gateway', async () => {
@@ -157,5 +158,153 @@ describe('Workload Identity Lab', () => {
     render(<App />);
     await userEvent.click(await screen.findByTestId('run-btn'));
     await waitFor(() => expect(screen.getAllByText('401').length).toBeGreaterThan(0));
+  });
+
+  describe('the Real button', () => {
+    const SECRET = 'fake-client-secret-DO-NOT-LEAK';
+    const REAL_SCOPES = 'openid opensearch:read whoami:read';
+    const realInfo = (extra = {}) => ({ source: 'mock', realAvailable: true, realSource: 'saved', real: { pfHost: 'pf.example.com', gatewayHost: 'gw.example.com', clientId: 'pf-client', scopes: REAL_SCOPES }, realForm: { gatewayUrl: 'https://gw.example.com', pfUrl: 'https://pf.example.com', clientId: 'pf-client' }, simulated: true, ...extra });
+    const callsTo = (part) => fetch.mock.calls.filter(([u]) => String(u).includes(part));
+    // Not connected yet; a successful connect flips the server's answer to connected
+    const unconnected = ({ connect }) => {
+      const base = fetch.getMockImplementation();
+      let connected = false;
+      fetch.mockImplementation((url, init) => {
+        const u = String(url);
+        if (u.includes('/api/info')) return Promise.resolve(mockJson(200, connected ? realInfo({ source: 'real', simulated: false }) : { source: 'mock', realAvailable: false, realSource: null, realForm: { gatewayUrl: 'https://gw.example.com', pfUrl: 'https://pf.example.com', clientId: 'pf-client' }, simulated: true }));
+        if (u.includes('/api/real/connect')) { const r = connect(JSON.parse(init.body)); if (r.status === 200) connected = true; return Promise.resolve(mockJson(r.status, r.body)); }
+        return base(url, init);
+      });
+    };
+
+    it('not connected: the button opens the form, prefilled, with an empty secret, and nothing runs', async () => {
+      unconnected({ connect: () => ({ status: 200, body: { ok: true } }) });
+      render(<App />);
+      await userEvent.click(await screen.findByTestId('real-btn'));
+      expect(await screen.findByTestId('connect-form')).toBeTruthy();
+      expect(screen.getByTestId('connect-gateway')).toHaveValue('https://gw.example.com');
+      expect(screen.getByTestId('connect-pf')).toHaveValue('https://pf.example.com');
+      expect(screen.getByTestId('connect-client')).toHaveValue('pf-client');
+      expect(screen.getByTestId('connect-secret')).toHaveValue('');
+      expect(screen.getByTestId('connect-secret').getAttribute('type')).toBe('password');
+      expect(callsTo('/api/idp/token')).toHaveLength(0);
+      expect(callsTo('/api/real/connect')).toHaveLength(0);
+    });
+
+    it('connect and run: sends the form once, switches to Real, runs with the Real scope, and the secret is gone from the page', async () => {
+      let sent;
+      unconnected({ connect: (b) => { sent = b; return { status: 200, body: { ok: true, persisted: true } }; } });
+      const base = fetch.getMockImplementation();
+      fetch.mockImplementation((url, init) => {
+        if (String(url).includes('/api/idp/token')) return Promise.resolve(mockJson(200, { token: 'wi-held-abc', held: true, claims: { iss: 'https://pf.example.com' } }));
+        return base(url, init);
+      });
+      render(<App />);
+      await userEvent.click(await screen.findByTestId('real-btn'));
+      await userEvent.click(await screen.findByTestId('connect-secret'));
+      await userEvent.paste(SECRET); // a secret is pasted, not typed
+      await userEvent.click(screen.getByTestId('connect-btn'));
+      await waitFor(() => expect(screen.queryByTestId('connect-form')).toBeNull());
+      expect(sent).toEqual({ gatewayUrl: 'https://gw.example.com', pfUrl: 'https://pf.example.com', clientId: 'pf-client', clientSecret: SECRET });
+      expect(JSON.parse(callsTo('/api/mode').at(-1)[1].body)).toEqual({ source: 'real' });
+      await screen.findByTestId('token-held');
+      // The run used the Real scope the moment Real was switched on, not the stale Mock one
+      expect(JSON.parse(callsTo('/api/idp/token')[0][1].body).scope).toBe(REAL_SCOPES);
+      expect(await screen.findByTestId('sim-banner')).toHaveTextContent(/REAL.*pf\.example\.com/);
+      expect(document.body.textContent).not.toContain(SECRET);
+      expect(document.body.innerHTML).not.toContain(SECRET);
+    });
+
+    it('PingFederate refusing the client is named in the form, keeps the form open, and runs nothing', async () => {
+      unconnected({ connect: () => ({ status: 401, body: { error: 'idp_refused', message: 'PingFederate refused the token request (HTTP 401): invalid_client' } }) });
+      render(<App />);
+      await userEvent.click(await screen.findByTestId('real-btn'));
+      await userEvent.click(await screen.findByTestId('connect-secret'));
+      await userEvent.paste('wrong');
+      await userEvent.click(screen.getByTestId('connect-btn'));
+      expect(await screen.findByTestId('connect-error')).toHaveTextContent(/PingFederate refused.*invalid_client/);
+      expect(screen.getByTestId('connect-form')).toBeTruthy();
+      expect(callsTo('/api/mode')).toHaveLength(0);
+      expect(callsTo('/api/idp/token')).toHaveLength(0);
+    });
+
+    it('cancel closes the form and drops the typed secret', async () => {
+      unconnected({ connect: () => ({ status: 200, body: { ok: true } }) });
+      render(<App />);
+      await userEvent.click(await screen.findByTestId('real-btn'));
+      await userEvent.click(await screen.findByTestId('connect-secret'));
+      await userEvent.paste(SECRET); // a secret is pasted, not typed
+      await userEvent.click(screen.getByTestId('connect-cancel'));
+      expect(screen.queryByTestId('connect-form')).toBeNull();
+      await userEvent.click(screen.getByTestId('real-btn'));
+      expect(await screen.findByTestId('connect-secret')).toHaveValue('');
+    });
+
+    it('already connected: the button switches to Real and runs, with no form; the status line names the connection', async () => {
+      const base = fetch.getMockImplementation();
+      let real = false;
+      fetch.mockImplementation((url, init) => {
+        const u = String(url);
+        if (u.includes('/api/info')) return Promise.resolve(mockJson(200, realInfo({ source: real ? 'real' : 'mock', simulated: !real })));
+        if (u.includes('/api/mode')) { real = true; return Promise.resolve(mockJson(200, { source: 'real' })); }
+        if (u.includes('/api/idp/token')) return Promise.resolve(mockJson(200, { token: 'wi-held-abc', held: true, claims: { iss: 'https://pf.example.com' } }));
+        return base(url, init);
+      });
+      render(<App />);
+      expect(await screen.findByTestId('real-status')).toHaveTextContent(/pf\.example\.com.*gw\.example\.com.*pf-client/);
+      await userEvent.click(screen.getByTestId('real-btn'));
+      await screen.findByTestId('token-held');
+      expect(screen.queryByTestId('connect-form')).toBeNull();
+      expect(JSON.parse(callsTo('/api/idp/token')[0][1].body).scope).toBe(REAL_SCOPES);
+    });
+
+    it('clicked before the page has loaded its info: asks the server instead of showing the form to a connected lab', async () => {
+      const base = fetch.getMockImplementation();
+      let infoCalls = 0;
+      fetch.mockImplementation((url, init) => {
+        const u = String(url);
+        if (u.includes('/api/info')) { infoCalls += 1; return infoCalls === 1 ? new Promise(() => {}) : Promise.resolve(mockJson(200, realInfo())); } // the first load never answers
+        if (u.includes('/api/idp/token')) return Promise.resolve(mockJson(200, { token: 'wi-held-abc', held: true, claims: { iss: 'https://pf.example.com' } }));
+        return base(url, init);
+      });
+      render(<App />);
+      await userEvent.click(await screen.findByTestId('real-btn'));
+      await screen.findByTestId('token-held');
+      expect(screen.queryByTestId('connect-form')).toBeNull();
+    });
+
+    it('not connected and clicked before the info loaded: the form is still prefilled from the server', async () => {
+      const base = fetch.getMockImplementation();
+      let infoCalls = 0;
+      const form = { gatewayUrl: 'https://gw.example.com', pfUrl: 'https://pf.example.com', clientId: 'pf-client' };
+      fetch.mockImplementation((url, init) => {
+        if (String(url).includes('/api/info')) { infoCalls += 1; return infoCalls === 1 ? new Promise(() => {}) : Promise.resolve(mockJson(200, { source: 'mock', realAvailable: false, realForm: form, simulated: true })); }
+        return base(url, init);
+      });
+      render(<App />);
+      await userEvent.click(await screen.findByTestId('real-btn'));
+      expect(await screen.findByTestId('connect-gateway')).toHaveValue('https://gw.example.com');
+      expect(screen.getByTestId('connect-client')).toHaveValue('pf-client');
+    });
+
+    it('forget asks the server to drop the saved connection and the page goes back to Mock', async () => {
+      const base = fetch.getMockImplementation();
+      let forgotten = false;
+      fetch.mockImplementation((url, init) => {
+        const u = String(url);
+        if (u.includes('/api/info')) return Promise.resolve(mockJson(200, forgotten ? { source: 'mock', realAvailable: false, realSource: null, simulated: true } : realInfo({ source: 'real', simulated: false })));
+        if (u.includes('/api/real/forget')) { forgotten = true; return Promise.resolve(mockJson(200, { forgotten: true, source: 'mock' })); }
+        return base(url, init);
+      });
+      render(<App />);
+      await userEvent.click(await screen.findByTestId('run-btn')); // a Real run is on the page
+      await screen.findByTestId('claims-view');
+      await userEvent.click(await screen.findByTestId('real-forget'));
+      await waitFor(() => expect(screen.queryByTestId('real-status')).toBeNull());
+      expect(screen.queryByTestId('claims-view')).toBeNull();
+      expect(screen.getByTestId('gateway-trace-empty')).toBeTruthy(); // nothing left to be mislabelled Simulated
+      expect(callsTo('/api/real/forget')).toHaveLength(1);
+      expect(await screen.findByTestId('sim-banner')).toHaveTextContent(/SIMULATED/);
+    });
   });
 });

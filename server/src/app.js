@@ -6,6 +6,7 @@ import { mintToken, decodeUnsafe, idpMeta } from './mockIdp.js';
 import { mcpCall, gatewayMeta, validateWorkloadToken } from './mockGateway.js';
 import { getMode, setMode } from './mode.js';
 import { realConfig, realHowTo, publicInfo, mintRealToken, holdToken, callGateway, passthroughVerdict, resolveBearer } from './realGateway.js';
+import { connectionSource, formDefaults, saveConnection, forgetConnection } from './realStore.js';
 import { mockTrace, realTrace, realFailureTrace } from './trace.js';
 import { install as installNetguard, report as netguardReport, assertMockZeroOutbound } from './netguard.js';
 import { listDiagrams, getDiagram } from './diagrams.js';
@@ -57,6 +58,8 @@ export function createApp() {
       realAvailable: cfg.ok,
       realMissing: cfg.ok ? [] : [...cfg.missing, ...cfg.invalid],
       real: cfg.ok ? publicInfo(cfg) : null, // hosts and ids only, never the secret
+      realSource: connectionSource(), // 'saved' | 'memory' | 'env' | null: where the connection came from
+      realForm: formDefaults(), // the three non-secret values, to prefill the Real button's form
       idp: idpMeta, gateway: gatewayMeta,
       simulated: getMode() !== 'real',
     });
@@ -70,6 +73,34 @@ export function createApp() {
     if (next !== 'mock' && next !== 'real') return res.status(400).json({ error: 'bad source' });
     setMode(next);
     res.json({ source: getMode() });
+  });
+
+  // The Real button's form: check the client against the real PingFederate first, save only if it accepts it.
+  // The secret is read here and saved; it is never echoed back, logged, or put in any response.
+  const FIELD = { WI_REAL_GATEWAY_URL: 'the gateway URL', WI_REAL_PF_URL: 'the PingFederate URL', WI_REAL_CLIENT_ID: 'the client ID', WI_REAL_CLIENT_SECRET: 'the client secret' };
+  app.post('/api/real/connect', async (req, res) => {
+    const b = req.body || {};
+    // Trimmed first, so the value that is checked is exactly the value that gets saved (a pasted secret often has a trailing newline)
+    const values = Object.fromEntries(Object.entries({ WI_REAL_GATEWAY_URL: b.gatewayUrl, WI_REAL_PF_URL: b.pfUrl, WI_REAL_CLIENT_ID: b.clientId, WI_REAL_CLIENT_SECRET: b.clientSecret })
+      .map(([k, v]) => [k, typeof v === 'string' ? v.trim() : '']));
+    const cfg = realConfig({ ...process.env, ...values });
+    if (!cfg.ok) {
+      const bad = cfg.missing.length ? `Fill in ${cfg.missing.map(k => FIELD[k]).join(', ')}.` : `${cfg.invalid.map(k => FIELD[k]).join(' and ')} must be an https URL.`;
+      return jsonError(res, 'bad_connection', bad, 400);
+    }
+    // The check is a real outbound call: run it as Real, so it never counts against Mock's zero-outbound proof.
+    const before = getMode();
+    setMode('real');
+    try { await mintRealToken(cfg); } catch (e) {
+      return jsonError(res, e.code || 'idp_error', e.message, e.code === 'idp_refused' ? 401 : 502);
+    } finally { setMode(before); }
+    const saved = saveConnection(values);
+    res.json({ ok: true, persisted: saved.persisted, real: publicInfo(realConfig()) });
+  });
+  app.post('/api/real/forget', (req, res) => {
+    forgetConnection();
+    if (getMode() === 'real' && !realConfig().ok) setMode('mock'); // nothing left to be Real with
+    res.json({ forgotten: true, source: getMode() });
   });
 
   // Mock IdP surface

@@ -24,7 +24,13 @@ body { font-size: 1.125rem; }
 .field-row label { font-weight: 700; color: var(--text); }
 .field-row input, .field-row select { width: 100%; min-height: 46px; padding: 10px 14px; }
 .wi-card button.primary { min-height: 46px; padding: 10px 32px; }
-.wi-card button.primary + .wi-steps { margin-top: 28px; }
+.wi-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.wi-card .wi-steps { margin-top: 28px; }
+.wi-real-status { margin: 16px 0 0; }
+.wi-connect { margin: 20px 0 0; padding: 18px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.wi-connect h3 { margin: 0 0 8px; font-size: 1.125rem; }
+.wi-connect .lab-error { margin: 0 0 16px; }
+.wi-forget { min-height: 0; padding: 0; border: 0; background: none; color: var(--text); font: inherit; text-decoration: underline; cursor: pointer; }
 
 /* Steps */
 .wi-steps { display: flex; flex-direction: column; gap: 18px; }

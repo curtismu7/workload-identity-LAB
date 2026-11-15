@@ -33,11 +33,19 @@ docker compose up --build
 ## Modes
 - **Mock** (default): in-process IdP + gateway + MCP backend; netguard asserts zero outbound.
 - **Real** (owner-run): the same four steps against the real PingFederate and the real
-  Privilege gateway. Copy `.env.example` to `.env` beside the compose file (gitignored, and kept
-  out of the image by `.dockerignore`), fill in `WI_REAL_GATEWAY_URL`, `WI_REAL_PF_URL`,
-  `WI_REAL_CLIENT_ID` and `WI_REAL_CLIENT_SECRET`, run `docker compose up -d`, then choose Real
-  in the Mode menu. Unset or invalid → the toggle is disabled and `POST /api/mode
-  {"source":"real"}` answers 409 naming the missing variables.
+  Privilege gateway. Click **Run through Privilege (Real)**. The first time, a small form asks for the
+  gateway URL, the PingFederate URL, the client ID and the client secret. **Connect and run** checks the
+  client against PingFederate first (a wrong secret is named and nothing is saved), saves the connection,
+  switches to Real and runs all four steps. After that the button just runs. The secret is saved in a
+  mode-600 file on the `wi-real-config` Docker volume (`/data`), so it survives a restart; it is never in the
+  repo, the image, the browser, an API response or a log. **Forget the saved connection** removes it. If the
+  volume cannot be written the connection is kept in memory for that run and the page says so.
+  - Alternative: set `WI_REAL_GATEWAY_URL`, `WI_REAL_PF_URL`, `WI_REAL_CLIENT_ID` and
+    `WI_REAL_CLIENT_SECRET` in a `.env` beside the compose file (gitignored, kept out of the image by
+    `.dockerignore`; see `.env.example`). A complete saved connection wins over `.env`. The three
+    non-secret values alone in `.env` prefill the form.
+  - Not connected → the Mode menu's Real option is disabled and `POST /api/mode {"source":"real"}`
+    answers 409 naming what is missing.
   - The server mints the token (`client_credentials`, `resource=<agent app URL>`), calls
     `<gateway>/<app>/mcp` with it, and calls the passthrough app's `whoami`. The client secret
     and the real token never reach the browser: the page gets an opaque handle and the decoded claims.
@@ -65,8 +73,8 @@ wrong-audience and garbage tokens refused.
 
 ## Test
 ```bash
-npm test          # node --test, 29 tests (Real mode runs against local stand-ins for PingFederate and the gateway)
-cd web && npx vitest run   # 9 tests
+npm test          # node --test, 37 tests (Real mode runs against local stand-ins for PingFederate and the gateway)
+cd web && npx vitest run   # 17 tests
 npm run doctor    # presenter checks
 npm run reset     # clear the run log
 ```

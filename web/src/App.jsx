@@ -14,6 +14,12 @@ const api = async (path, body, extraHeaders = {}) => {
 
 const MOCK_SCOPE = 'openid federated:read whoami:read';
 
+const CONNECTION_NOTE = {
+  saved: "The secret is saved on this lab's Docker volume and is never sent to the browser.",
+  memory: "The volume cannot be written, so the secret is kept in memory for this run only.",
+  env: 'Set in the app .env.',
+};
+
 const Chip = ({ ok, children }) => (
   <span className={`status-chip ${ok ? 'wi-chip-ok' : 'wi-chip-deny'}`} data-testid={ok ? 'chip-ok' : 'chip-deny'}>{children}</span>
 );
@@ -35,6 +41,10 @@ export default function App() {
   const [runs, setRuns] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [showConnect, setShowConnect] = useState(false); // the Real button's form
+  const [form, setForm] = useState({ gatewayUrl: '', pfUrl: '', clientId: '', clientSecret: '' });
+  const [connecting, setConnecting] = useState(false);
+  const [connectError, setConnectError] = useState('');
 
   const loadRuns = useCallback(async () => {
     const { json } = await api('/api/runs');
@@ -66,19 +76,59 @@ export default function App() {
     loadRuns();
   };
 
+  // Results belong to the mode that produced them: a Real run must never be shown under the Simulated caption
+  const clearResults = () => { setClaims(null); setToken(null); setTokenHeld(false); setGatewayResult(null); setWhoami(null); setControl(null); setTraces([]); };
+
   const switchMode = async (next) => {
     setError('');
     const { status, json } = await api('/api/mode', { source: next });
-    if (status === 409) { setError(json.message || 'Real mode is not configured'); return; }
+    if (status === 409) { setError(json.message || 'Real mode is not configured'); return null; }
     setModeState(next);
+    clearResults();
     const { json: info2 } = await api('/api/info');
     setInfo(info2);
     // The two modes use different scope names: swap the default, never a value the user typed
     const realScopes = info2.real?.scopes;
-    setScope(prev => (next === 'real' ? (prev === MOCK_SCOPE && realScopes ? realScopes : prev) : (prev === realScopes ? MOCK_SCOPE : prev)));
+    const nextScope = next === 'real' ? (scope === MOCK_SCOPE && realScopes ? realScopes : scope) : (scope === realScopes ? MOCK_SCOPE : scope);
+    setScope(nextScope);
+    return nextScope; // so a run that follows right away uses it (state would still hold the old scope)
   };
 
-  const runDemo = async () => {
+  // The Real button: already connected -> switch to Real and run; otherwise ask for the connection first.
+  const runReal = async () => {
+    setError('');
+    // Ask the server now: the page's copy of the info may not have loaded yet, or may be stale
+    const { json: cur } = await api('/api/info');
+    setInfo(cur);
+    if (!cur.realAvailable) {
+      setForm({ ...cur.realForm, clientSecret: '' });
+      setConnectError('');
+      setShowConnect(true);
+      return;
+    }
+    const s = await switchMode('real');
+    if (s !== null) runDemo(s);
+  };
+  const cancelConnect = () => { setForm(f => ({ ...f, clientSecret: '' })); setConnectError(''); setShowConnect(false); };
+  const connect = async (e) => {
+    e.preventDefault();
+    setConnecting(true); setConnectError('');
+    const { status, json } = await api('/api/real/connect', form);
+    setConnecting(false);
+    if (status !== 200) { setConnectError(json.message || `Could not connect (HTTP ${status})`); return; }
+    cancelConnect(); // the secret is saved on the server now: drop it from the page
+    const s = await switchMode('real');
+    if (s !== null) runDemo(s);
+  };
+  const forget = async () => {
+    await api('/api/real/forget', {});
+    const { json: info2 } = await api('/api/info');
+    if (info2.source === 'mock' && scope === info?.real?.scopes) setScope(MOCK_SCOPE);
+    setInfo(info2); setModeState(info2.source);
+    clearResults();
+  };
+
+  const runDemo = async (scopeToUse = scope) => {
     setBusy(true); setError('');
     setClaims(null); setToken(null); setTokenHeld(false); setGatewayResult(null); setWhoami(null); setControl(null); setTraces([]);
     const addTrace = (step, title, r) => {
@@ -86,7 +136,7 @@ export default function App() {
     };
     try {
       // Step 1: mint
-      const mint = await api('/api/idp/token', { scope, corrupt: corrupt || undefined });
+      const mint = await api('/api/idp/token', { scope: scopeToUse, corrupt: corrupt || undefined });
       if (mint.status !== 200) {
         // Real mode: PingFederate (or the config) said no. Name it and stop; there is no token to send.
         const why = mint.json.message || `The token request failed (HTTP ${mint.status})`;
@@ -136,7 +186,7 @@ export default function App() {
 
   const reset = async () => {
     await api('/api/reset', {});
-    setClaims(null); setToken(null); setTokenHeld(false); setGatewayResult(null); setWhoami(null); setControl(null); setTraces([]); setRuns([]);
+    clearResults(); setRuns([]);
   };
 
   const gwOk = gatewayResult?.status === 200;
@@ -152,7 +202,7 @@ export default function App() {
     <div className="lab-root">
       <div className="lab-bar">
         <TopMenu
-          mode={{ value: mode, onChange: switchMode, realAvailable: info?.realAvailable, realHint: 'Set WI_REAL_GATEWAY_URL, WI_REAL_PF_URL, WI_REAL_CLIENT_ID and WI_REAL_CLIENT_SECRET in the app .env' }}
+          mode={{ value: mode, onChange: switchMode, realAvailable: info?.realAvailable, realHint: 'Click “Run through Privilege (Real)” on the page to connect first' }}
           theme={{ value: theme, onChange: setTheme }}
           fontSize={{ value: fontSize, onChange: setFontSize }}
           help={{ href: 'https://github.com/curtismu7/workload-identity-LAB#readme' }}
@@ -163,7 +213,7 @@ export default function App() {
       <div className="sim-banner" data-testid="sim-banner">
         {mode === 'mock'
           ? 'SIMULATED — the IdP, gateway and MCP backend on this page are in-process mocks; no real system is called. Mock-issued tokens are labelled.'
-          : `REAL — the token is minted by ${info?.real?.pfHost || 'PingFederate'} and every call goes to the Privilege gateway at ${info?.real?.gatewayHost || 'the configured host'}. Credentials stay on the server (app .env, owner-run).`}
+          : `REAL — the token is minted by ${info?.real?.pfHost || 'PingFederate'} and every call goes to the Privilege gateway at ${info?.real?.gatewayHost || 'the configured host'}. The client secret stays on the server and is never sent to the browser.`}
       </div>
       <main className="lab-main">
         <h1>Federated agents: workload identity through the gateway</h1>
@@ -190,9 +240,57 @@ export default function App() {
                 <option value="wrong-audience">wrong audience (token manager mix-up)</option>
               </select>
             </div>
-            <button className="primary" data-testid="run-btn" onClick={runDemo} disabled={busy}>
-              {busy ? 'Running…' : 'Run'}
-            </button>
+            <div className="wi-actions">
+              <button className="primary" data-testid="run-btn" onClick={() => runDemo()} disabled={busy}>
+                {busy ? 'Running…' : 'Run'}
+              </button>
+              <button className="primary" data-testid="real-btn" onClick={runReal} disabled={busy || connecting}>
+                Run through Privilege (Real)
+              </button>
+            </div>
+            {info?.realAvailable && info.real && (
+              <p className="muted wi-real-status" data-testid="real-status">
+                Connected: {info.real.pfHost} → {info.real.gatewayHost}, client {info.real.clientId}.{' '}
+                {CONNECTION_NOTE[info.realSource]}
+                {(info.realSource === 'saved' || info.realSource === 'memory') && (
+                  <> <button type="button" className="wi-forget" data-testid="real-forget" onClick={forget}>Forget the saved connection</button></>
+                )}
+              </p>
+            )}
+            {showConnect && (
+              <form className="wi-connect" data-testid="connect-form" onSubmit={connect} autoComplete="off">
+                <h3>Connect to PingFederate and the Privilege gateway</h3>
+                <p className="muted">
+                  Paste the client secret once. The server checks it against PingFederate, then saves it on this lab's
+                  Docker volume. It is never sent back to this page.
+                </p>
+                <div className="field-row">
+                  <label htmlFor="cx-gateway">Privilege gateway URL</label>
+                  <input id="cx-gateway" data-testid="connect-gateway" inputMode="url" placeholder="https://<gateway-host>" value={form.gatewayUrl || ''} onChange={e => setForm(f => ({ ...f, gatewayUrl: e.target.value }))} />
+                </div>
+                <div className="field-row">
+                  <label htmlFor="cx-pf">PingFederate URL</label>
+                  <input id="cx-pf" data-testid="connect-pf" inputMode="url" placeholder="https://<pingfederate-host>" value={form.pfUrl || ''} onChange={e => setForm(f => ({ ...f, pfUrl: e.target.value }))} />
+                </div>
+                <div className="field-row">
+                  <label htmlFor="cx-client">Client ID</label>
+                  <input id="cx-client" data-testid="connect-client" value={form.clientId || ''} onChange={e => setForm(f => ({ ...f, clientId: e.target.value }))} />
+                </div>
+                <div className="field-row">
+                  <label htmlFor="cx-secret">Client secret</label>
+                  <input id="cx-secret" data-testid="connect-secret" type="password" autoComplete="new-password" spellCheck={false}
+                    autoFocus={Boolean(form.gatewayUrl && form.pfUrl && form.clientId)}
+                    value={form.clientSecret || ''} onChange={e => setForm(f => ({ ...f, clientSecret: e.target.value }))} />
+                </div>
+                {connectError && <div className="lab-error" role="alert" data-testid="connect-error">{connectError}</div>}
+                <div className="wi-actions">
+                  <button className="primary" type="submit" data-testid="connect-btn" disabled={connecting}>
+                    {connecting ? 'Checking with PingFederate…' : 'Connect and run'}
+                  </button>
+                  <button type="button" data-testid="connect-cancel" onClick={cancelConnect} disabled={connecting}>Cancel</button>
+                </div>
+              </form>
+            )}
             <div className="wi-steps">
               <div className="wi-step"><span className="wi-step-num">1</span>
                 <div><strong>Mint</strong> — the IdP issues a JWT for the agent.
@@ -318,9 +416,9 @@ export default function App() {
                 </p>
               ) : (
                 <p className="muted" data-testid="proof-mock-note">
-                  In Mock mode nothing leaves this page, so these runs leave nothing in Privilege. Switch the Mode menu to
-                  Real to send the same four steps to the real gateway (it needs the Real settings in the app <code>.env</code>;
-                  see the README). The setup guide is <code>privilege/GATEWAY-WORKLOAD-IDENTITY-SETUP.md</code> in AI-DEMO2.
+                  In Mock mode nothing leaves this page, so these runs leave nothing in Privilege. Click{' '}
+                  <strong>Run through Privilege (Real)</strong> to send the same four steps to the real gateway (the first time it
+                  asks for the PingFederate client secret). The setup guide is <code>privilege/GATEWAY-WORKLOAD-IDENTITY-SETUP.md</code> in AI-DEMO2.
                 </p>
               )}
           </div>

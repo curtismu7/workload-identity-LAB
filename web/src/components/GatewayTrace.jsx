@@ -1,4 +1,5 @@
 import React from 'react';
+import JsonPane from './JsonPane.jsx';
 import './gateway-trace.css';
 
 /*
@@ -26,12 +27,27 @@ import './gateway-trace.css';
 const OUTCOME_LABEL = { pass: 'PASS', fail: 'FAIL', skipped: 'NOT REACHED', info: 'INFO' };
 const BASIS_NOTE = { inferred: 'inferred from the outcome', observed: 'observed in the response' };
 
+// What matters in THIS lab's gateway payloads: the JSON-RPC method and tool, which check refused (stage, detail), the tool list,
+// and the claims the backend received (unchanged = the Pass Agent Token verdict). Rule 24 defaults (sub, act, aud, scope, ...) are already hot.
+const GW_HOT = ['method', 'name', 'tools', 'stage', 'detail', 'receivedClaims', 'unchanged'];
+
 const asText = (v) => (typeof v === 'string' ? v : JSON.stringify(v, null, 2));
 const clip = (s, n = 6000) => (s.length > n ? `${s.slice(0, n)}\n… (${s.length - n} more characters not shown)` : s);
 const headerLines = (h) => Object.entries(h || {}).map(([k, v]) => `${k}: ${v}`);
 
-export const requestText = (r) => [`${r.method} ${r.url}`, ...headerLines(r.headers), '', asText(r.body)].join('\n');
+export const requestHead = (r) => [`${r.method} ${r.url}`, ...headerLines(r.headers)].join('\n');
 export const responseText = (r) => [`HTTP ${r.status}`, ...headerLines(r.headers), '', asText(r.body)].join('\n');
+
+// The request line here is "METHOD url" (no HTTP version), which the shared pane's transcript splitter does not take for a request,
+// so the head and the body (both already in hand as data) get their own panes: the head as text, the body as a Form | JSON pane.
+function RequestPane({ r, testId }) {
+  return (
+    <div className="gw-wire" data-testid={testId}>
+      <JsonPane value={clip(requestHead(r))} label="Request headers" testId={`${testId}-head`} />
+      {r.body != null && <JsonPane value={typeof r.body === 'string' ? clip(r.body) : r.body} label="Request body" testId={`${testId}-body`} hot={GW_HOT} />}
+    </div>
+  );
+}
 
 function Exchange({ ex }) {
   const t = ex.trace;
@@ -63,12 +79,16 @@ function Exchange({ ex }) {
       <div className="gw-io">
         <div>
           <h4>Request sent to the gateway</h4>
-          <pre className="gw-pre" data-testid={`trace-${ex.step}-request`}>{clip(requestText(t.request))}</pre>
+          <RequestPane r={t.request} testId={`trace-${ex.step}-request`} />
         </div>
         <div>
           <h4>Response from the gateway</h4>
           {t.response
-            ? <pre className="gw-pre" data-testid={`trace-${ex.step}-response`}>{clip(responseText(t.response))}</pre>
+            ? (
+              <div data-testid={`trace-${ex.step}-response`}>
+                <JsonPane value={clip(responseText(t.response))} label="Response from the gateway" testId={`trace-${ex.step}-resp`} hot={GW_HOT} />
+              </div>
+            )
             : <p className="gw-muted" data-testid={`trace-${ex.step}-response`}>No response: the gateway could not be reached.</p>}
         </div>
       </div>

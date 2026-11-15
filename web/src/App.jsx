@@ -12,6 +12,9 @@ const api = async (path, body, extraHeaders = {}) => {
   return { status: res.status, json };
 };
 
+// The gateway's lifetime check reads `exp`; iss, aud, sub, act, client_id and scope (its other checks) are hot by default.
+const CLAIMS_HOT = ['exp'];
+
 const MOCK_SCOPE = 'openid federated:read whoami:read';
 
 const Chip = ({ ok, children }) => (
@@ -208,7 +211,7 @@ export default function App() {
                   {whoami && (!whoOk ? <Chip ok={false}>{whoami.status}</Chip>
                     : whoami.json?._meta?.unchanged === false ? <Chip ok={false}>token changed</Chip>
                       : <Chip ok>{whoami.json?._meta?.source === 'real' && whoami.json._meta.unchanged !== true ? '200 received' : 'token unchanged'}</Chip>)}
-                  {backendClaims && <JsonPane value={backendClaims.receivedClaims || backendClaims} testId="whoami-claims" label="what the backend received" />}
+                  {backendClaims && <JsonPane value={backendClaims.receivedClaims || backendClaims} testId="whoami-claims" label="what the backend received" hot={CLAIMS_HOT} />}
                 </div></div>
               <div className="wi-step"><span className="wi-step-num">4</span>
                 <div><strong>Control</strong> — garbage bearer.
@@ -221,12 +224,12 @@ export default function App() {
             {token
               ? (tokenHeld
                 ? <p className="muted" data-testid="token-held">The real token stays on the server and is never shown here. The decoded claims below are what the gateway checks.</p>
-                : <div className="wi-claims" data-testid="raw-token">{token}</div>)
+                : <JsonPane value={token} testId="raw-token" label="Raw token (mock-issued)" />)
               : <p className="muted">Press Run to mint one.</p>}
             {claims && (
               <>
                 <h3>Decoded claims</h3>
-                <JsonPane value={claims} testId="claims-view" label="IdP token claims" />
+                <JsonPane value={claims} testId="claims-view" label="IdP token claims" hot={CLAIMS_HOT} />
               </>
             )}
           </div>

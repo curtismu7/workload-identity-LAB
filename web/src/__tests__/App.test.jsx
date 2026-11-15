@@ -7,8 +7,10 @@ const mockJson = (status, body) => ({ status, json: async () => body });
 global.fetch = vi.fn();
 
 import App from '../App.jsx';
+import { setJsonView } from '../components/JsonPane.jsx';
 
 beforeEach(() => {
+  setJsonView('form'); // the Form | JSON choice is shared module state: every test starts on Form
   fetch.mockReset();
   fetch.mockImplementation((url, init) => {
     if (String(url).includes('/api/info')) return Promise.resolve(mockJson(200, { source: 'mock', realAvailable: false, idp: {}, gateway: {}, simulated: true }));
@@ -98,6 +100,15 @@ describe('Workload Identity Lab', () => {
     expect(screen.getByTestId('trace-2-request')).toHaveTextContent('POST https://gateway.workload-lab.invalid/federated-agent/mcp');
     expect(screen.getByTestId('trace-2-request')).toHaveTextContent('shortened');
     expect(screen.getByTestId('trace-2-response')).toHaveTextContent('HTTP 401');
+    // the JSON bodies are Form | JSON panes (the head stays text); the refusal stage is a hot key in both views
+    expect(screen.getByTestId('trace-2-request-body-box')).toHaveAttribute('data-view', 'form');
+    expect(screen.getByTestId('trace-2-resp-body-box')).toHaveAttribute('data-view', 'form');
+    expect(screen.getByTestId('trace-2-resp-body')).toHaveTextContent('audience');
+    expect(screen.getByTestId('trace-2-resp-body').querySelector('[data-hot="true"]')).not.toBeNull();
+    await userEvent.click(screen.getByTestId('trace-2-resp-body-raw'));
+    expect(screen.getByTestId('trace-2-resp-body')).toHaveTextContent('"stage": "audience"');
+    expect(screen.getByTestId('trace-2-request-body')).toHaveTextContent('"method": "tools/list"');
+    expect(screen.getByTestId('trace-2-resp-body').querySelector('.jtok--hot')).not.toBeNull();
     expect(screen.getByTestId('gateway-trace-basis')).toHaveTextContent(/Simulated/);
   });
 
@@ -132,18 +143,54 @@ describe('Workload Identity Lab', () => {
     expect(screen.getByTestId('whoami-claims')).toHaveTextContent('demo-agent-1');
   });
 
-  it('json panes offer Formatted | Raw and render claims in both', async () => {
+  it('json panes offer Form | JSON and render claims in both', async () => {
     render(<App />);
     await userEvent.click(await screen.findByTestId('run-btn'));
     await waitFor(() => expect(screen.getByTestId('claims-view')).toBeTruthy());
-    // Formatted is the default view: a form with a label per field
+    expect(screen.getByTestId('claims-view-formatted')).toHaveTextContent('Form');
+    expect(screen.getByTestId('claims-view-raw')).toHaveTextContent('JSON');
+    // Form is the default view: a form with a label per field
+    expect(screen.getByTestId('claims-view-box')).toHaveAttribute('data-view', 'form');
     expect(screen.getByTestId('claims-view')).toHaveTextContent('iss');
-    // switch to Raw: the exact JSON text, coloured
+    // switch to JSON: the exact JSON text, coloured
     await userEvent.click(screen.getByTestId('claims-view-raw'));
+    expect(screen.getByTestId('claims-view-box')).toHaveAttribute('data-view', 'raw');
     expect(screen.getByTestId('claims-view')).toHaveTextContent('"iss"');
-    // back to Formatted
+    // back to Form
     await userEvent.click(screen.getByTestId('claims-view-formatted'));
     expect(screen.getByTestId('claims-view')).toHaveTextContent('iss');
+  });
+
+  it('important claims stand out: the defaults (aud, act) and this lab\'s own (exp, the lifetime check)', async () => {
+    const base = fetch.getMockImplementation();
+    fetch.mockImplementation((url, init) => {
+      if (String(url).includes('/api/idp/token')) return Promise.resolve(mockJson(200, { token: 'h.sig.s', claims: { iss: 'https://idp.workload-lab.invalid', aud: 'https://gateway.workload-lab.invalid/federated-agent/mcp', sub: 'demo-agent-1', jti: 'x1', exp: 1763161200 } }));
+      return base(url, init);
+    });
+    render(<App />);
+    await userEvent.click(await screen.findByTestId('run-btn'));
+    const claims = await screen.findByTestId('claims-view');
+    const hotKeys = [...claims.querySelectorAll('[data-hot="true"] > dt')].map(n => n.textContent);
+    expect(hotKeys).toEqual(expect.arrayContaining(['iss', 'aud', 'sub', 'exp']));
+    expect(hotKeys).not.toContain('jti');
+    await userEvent.click(screen.getByTestId('claims-view-raw'));
+    expect([...screen.getByTestId('claims-view').querySelectorAll('.jtok--hot')].map(n => n.textContent)).toContain('"exp"');
+  });
+
+  it('the raw token goes through the pane (a JWT in its three colours, never scrolling)', async () => {
+    const base = fetch.getMockImplementation();
+    // built at run time: a JWT-shaped literal in the source trips the secret scanner
+    const b64 = (o) => btoa(JSON.stringify(o)).replace(/=+$/, '');
+    const jwt = [b64({ alg: 'RS256' }), b64({ sub: 'demo-agent-1' }), 'c2lnbmF0dXJl'].join('.');
+    fetch.mockImplementation((url, init) => {
+      if (String(url).includes('/api/idp/token')) return Promise.resolve(mockJson(200, { token: jwt, claims: { iss: 'i' } }));
+      return base(url, init);
+    });
+    render(<App />);
+    await userEvent.click(await screen.findByTestId('run-btn'));
+    const raw = await screen.findByTestId('raw-token');
+    expect(raw).toHaveTextContent(jwt);
+    expect(raw.querySelectorAll('.jtok--jwt1, .jtok--jwt2, .jtok--jwt3')).toHaveLength(3);
   });
 
   it('negative case shows the refusal stage', async () => {

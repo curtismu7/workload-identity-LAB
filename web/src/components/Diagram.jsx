@@ -60,7 +60,7 @@ export default function Diagram({ diagramId = 'workload-identity-flow', theme = 
   return (
     <div data-testid="diagram">
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 12 }}>
-        <button className="primary" data-testid="simulate-btn" onClick={simulate} disabled={playing}>Simulate</button>
+        <button type="button" data-testid="simulate-btn" onClick={simulate} disabled={playing}>Simulate</button>
         <button className="btn-secondary" data-testid="diagram-reset-btn" onClick={reset}>Reset</button>
         <label htmlFor="speed">Speed</label>
         <select id="speed" data-testid="speed-select" value={speed} onChange={e => setSpeed(Number(e.target.value))}>
@@ -69,7 +69,7 @@ export default function Diagram({ diagramId = 'workload-identity-flow', theme = 
           <option value={300}>fast</option>
         </select>
       </div>
-      <div style={{ height: 420, border: '1px solid var(--border,#d8dde3)', borderRadius: 8 }}>
+      <div className="wi-diagram-canvas">
         <ReactFlow nodes={nodes} edges={edges} onNodesChange={(changes) => setNodes((ns) => applyNodeChanges(changes, ns))} colorMode={theme === 'dark' ? 'dark' : 'light'} fitView proOptions={{ hideAttribution: true }}>
           <Background />
           <Controls showInteractive={false} />

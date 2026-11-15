@@ -258,8 +258,16 @@ export default function App() {
   })();
 
   return (
-    <div className="lab-root">
-      <div className="lab-bar">
+    <>
+      <header className="shell-bar">
+        <span className="shell-brand">
+          <span className="shell-logo" aria-hidden="true">WI</span>
+          Workload Identity Lab
+          <span className={`shell-badge${mode === 'real' ? ' shell-badge--real' : ''}`} data-testid="mode-badge">{mode === 'real' ? 'Real' : 'Mock'}</span>
+        </span>
+        <nav className="shell-nav" aria-label="Lab">
+          <a href="./" aria-current="page" data-testid="nav-lab">Federated agents</a>
+        </nav>
         <TopMenu
           mode={{ value: mode, onChange: switchMode, realAvailable: info?.realAvailable, realHint: 'Click “Run through Privilege (Real)” on the page to connect first' }}
           theme={{ value: theme, onChange: setTheme }}
@@ -268,13 +276,13 @@ export default function App() {
           version="v0.1.0"
           onReset={reset}
         />
-      </div>
-      <div className="sim-banner" data-testid="sim-banner">
-        {mode === 'mock'
-          ? 'SIMULATED — the IdP, gateway and MCP backend on this page are in-process mocks; no real system is called. Mock-issued tokens are labelled.'
-          : `REAL — the token is minted by ${info?.real?.pfHost || 'PingFederate'} and every call goes to the Privilege gateway at ${info?.real?.gatewayHost || 'the configured host'}. The client secret stays on the server and is never sent to the browser.`}
-      </div>
+      </header>
       <main className="lab-main">
+        <div className="sim-banner" data-testid="sim-banner">
+          {mode === 'mock'
+            ? 'SIMULATED — the IdP, gateway and MCP backend on this page are in-process mocks; no real system is called. Mock-issued tokens are labelled.'
+            : `REAL — the token is minted by ${info?.real?.pfHost || 'PingFederate'} and every call goes to the Privilege gateway at ${info?.real?.gatewayHost || 'the configured host'}. The client secret stays on the server and is never sent to the browser.`}
+        </div>
         <h1>Federated agents: workload identity through the gateway</h1>
         <p className="lab-lead">
           The agent holds <strong>no gateway secret</strong>. Its own identity platform vouches for it
@@ -308,24 +316,8 @@ export default function App() {
                   className={path === 'direct' ? 'wi-seg-on' : ''} onClick={() => setPath('direct')}>Direct (no gateway)</button>
               </div>
             </div>
-            <div className="wi-actions">
-              <button className="primary" data-testid="run-btn" onClick={() => runDemo()} disabled={busy}>
-                {busy ? 'Running…' : 'Run'}
-              </button>
-              <button className="primary" data-testid="real-btn" onClick={runReal} disabled={busy || connecting}>
-                Run through Privilege (Real)
-              </button>
-            </div>
-            {info?.realAvailable && info.real && (
-              <p className="muted wi-real-status" data-testid="real-status">
-                Connected: {info.real.pfHost} → {info.real.gatewayHost}, client {info.real.clientId}.{' '}
-                {CONNECTION_NOTE[info.realSource]}
-                {(info.realSource === 'saved' || info.realSource === 'memory') && (
-                  <> <button type="button" className="wi-forget" data-testid="real-forget" onClick={forget}>Forget the saved connection</button></>
-                )}
-              </p>
-            )}
-            {showConnect && (
+            {/* The connect form takes the place of the Run actions while it is open: one primary button at a time */}
+            {showConnect ? (
               <form className="wi-connect" data-testid="connect-form" onSubmit={connect} autoComplete="off">
                 <h3>Connect to PingFederate and the Privilege gateway</h3>
                 <p className="muted">
@@ -358,6 +350,24 @@ export default function App() {
                   <button type="button" data-testid="connect-cancel" onClick={cancelConnect} disabled={connecting}>Cancel</button>
                 </div>
               </form>
+            ) : (
+              <div className="wi-actions">
+                <button className="primary" data-testid="run-btn" onClick={() => runDemo()} disabled={busy}>
+                  {busy ? 'Running…' : 'Run'}
+                </button>
+                <button type="button" data-testid="real-btn" onClick={runReal} disabled={busy || connecting}>
+                  Run through Privilege (Real)
+                </button>
+              </div>
+            )}
+            {info?.realAvailable && info.real && (
+              <p className="muted wi-real-status" data-testid="real-status">
+                Connected: {info.real.pfHost} → {info.real.gatewayHost}, client {info.real.clientId}.{' '}
+                {CONNECTION_NOTE[info.realSource]}
+                {(info.realSource === 'saved' || info.realSource === 'memory') && (
+                  <> <button type="button" className="wi-forget" data-testid="real-forget" onClick={forget}>Forget the saved connection</button></>
+                )}
+              </p>
             )}
             <div className="wi-steps">
               <div className="wi-step"><span className="wi-step-num">1</span>
@@ -551,6 +561,6 @@ export default function App() {
           </div>
         </section>
       </main>
-    </div>
+    </>
   );
 }

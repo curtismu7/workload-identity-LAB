@@ -52,6 +52,29 @@ describe('Workload Identity Lab', () => {
     expect(screen.getByRole('heading', { name: /federated agents/i })).toBeTruthy();
   });
 
+  it('shell bar: brand, mode badge, the current page pill, the TopMenu; the banner opens <main>; one primary at a time', async () => {
+    render(<App />);
+    const bar = document.querySelector('header.shell-bar');
+    expect(bar).not.toBeNull();
+    expect(bar.querySelector('.shell-brand')).toHaveTextContent('Workload Identity Lab');
+    expect(await screen.findByTestId('mode-badge')).toHaveTextContent('Mock');
+    expect(screen.getByTestId('nav-lab')).toHaveAttribute('aria-current', 'page');
+    expect(bar.querySelector('[data-testid="top-menu"]')).not.toBeNull();
+    expect(document.querySelector('main').firstElementChild).toBe(screen.getByTestId('sim-banner'));
+    expect(document.querySelectorAll('button.primary')).toHaveLength(1);
+    expect(screen.getByTestId('run-btn')).toHaveClass('primary');
+  });
+
+  it('the connect form replaces the Run actions while open, so the page still has one primary', async () => {
+    render(<App />);
+    await userEvent.click(await screen.findByTestId('real-btn'));
+    await screen.findByTestId('connect-form');
+    expect(screen.queryByTestId('run-btn')).toBeNull();
+    expect([...document.querySelectorAll('button.primary')].map(b => b.dataset.testid)).toEqual(['connect-btn']);
+    await userEvent.click(screen.getByTestId('connect-cancel'));
+    expect(screen.getByTestId('run-btn')).toHaveClass('primary');
+  });
+
   it('tells the presenter how to prove it in Privilege, and says Mock leaves nothing there', async () => {
     render(<App />);
     expect(await screen.findByRole('heading', { name: /show it in privilege/i })).toBeTruthy();

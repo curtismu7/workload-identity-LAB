@@ -20,30 +20,23 @@ export default function JwtBox({ value, testId = 'raw-token', label = 'The token
   };
   return (
     <div data-testid={testId}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+      <div className="wi-jwt-bar">
         <button
           type="button"
           data-testid={`${testId}-copy`}
           onClick={copy}
           aria-label={`Copy the token to the clipboard`}
-          style={{ font: 'inherit', fontSize: 11, padding: '2px 10px', borderRadius: 6, cursor: 'pointer', border: '1px solid var(--border, #d8dde3)', background: 'var(--surface-2, #eff0f1)', color: 'inherit' }}
+          className="wi-jwt-copy"
         >
           Copy
         </button>
-        <span data-testid={`${testId}-copy-state`} style={{ fontSize: 11, opacity: 0.75, minHeight: '1em' }}>{copied}</span>
-        <span style={{ fontSize: 11, opacity: 0.7, marginLeft: 'auto' }}>{label}</span>
+        <span data-testid={`${testId}-copy-state`} className="wi-jwt-note">{copied}</span>
+        <span className="wi-jwt-note wi-jwt-label">{label}</span>
       </div>
       <pre
         id={`${testId}-text`}
         data-testid={`${testId}-text`}
-        style={{
-          margin: 0, padding: '12px 14px', borderRadius: 8,
-          background: 'var(--surface-2, #eff0f1)', color: 'var(--text, inherit)',
-          border: '1px solid var(--border, #d8dde3)',
-          fontFamily: '"IBM Plex Mono",ui-monospace,monospace', fontSize: 12, lineHeight: 1.6,
-          whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', overflow: 'visible',
-          minHeight: '6em',
-        }}
+        className="wi-jwt-text"
       >
         {value}
       </pre>

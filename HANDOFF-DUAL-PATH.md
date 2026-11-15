@@ -74,8 +74,8 @@ All five items from this handoff are closed.
   rebuilt from main.
 
 ### Main rewritten (owner-approved)
-GitHub's squash merge added `Co-authored-by: Curtis Muir <curtismu7@users.noreply.github.com>` to some commits,
-because they were authored with the short noreply address. That breaks rule 8. Mains were rewritten with
+GitHub's squash merge added a co-author trailer naming the owner's own short noreply address to some commits,
+because they were authored with that address. That breaks rule 8. Mains were rewritten with
 force-with-lease, keeping the same trees:
 
 | Repo | Old | New |

@@ -1,4 +1,5 @@
 import React from 'react';
+import JsonPane from './JsonPane.jsx';
 import './gateway-trace.css';
 
 /*
@@ -25,6 +26,10 @@ import './gateway-trace.css';
 
 const OUTCOME_LABEL = { pass: 'PASS', fail: 'FAIL', skipped: 'NOT REACHED', info: 'INFO' };
 const BASIS_NOTE = { inferred: 'inferred from the outcome', observed: 'observed in the response' };
+
+// What matters in THIS lab's gateway payloads: the JSON-RPC method and tool, which check refused (stage, detail), the tool list,
+// and the claims the backend received (unchanged = the Pass Agent Token verdict). Rule 24 defaults (sub, act, aud, scope, ...) are already hot.
+const GW_HOT = ['method', 'name', 'tools', 'stage', 'detail', 'receivedClaims', 'unchanged'];
 
 const asText = (v) => (typeof v === 'string' ? v : JSON.stringify(v, null, 2));
 const clip = (s, n = 6000) => (s.length > n ? `${s.slice(0, n)}\n… (${s.length - n} more characters not shown)` : s);
@@ -63,12 +68,12 @@ function Exchange({ ex }) {
       <div className="gw-io">
         <div>
           <h4>Request sent to the gateway</h4>
-          <pre className="gw-pre" data-testid={`trace-${ex.step}-request`}>{clip(requestText(t.request))}</pre>
+          <div className="gw-pre" data-testid={`trace-${ex.step}-request`}><JsonPane value={clip(requestText(t.request))} label="Request sent to the gateway" hot={GW_HOT} /></div>
         </div>
         <div>
           <h4>Response from the gateway</h4>
           {t.response
-            ? <pre className="gw-pre" data-testid={`trace-${ex.step}-response`}>{clip(responseText(t.response))}</pre>
+            ? <div className="gw-pre" data-testid={`trace-${ex.step}-response`}><JsonPane value={clip(responseText(t.response))} label="Response from the gateway" hot={GW_HOT} /></div>
             : <p className="gw-muted" data-testid={`trace-${ex.step}-response`}>No response: the gateway could not be reached.</p>}
         </div>
       </div>

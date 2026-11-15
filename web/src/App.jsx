@@ -13,6 +13,9 @@ const api = async (path, body, extraHeaders = {}) => {
   return { status: res.status, json };
 };
 
+// The gateway's lifetime check reads `exp`; iss, aud, sub, act, client_id and scope (its other checks) are hot by default.
+const CLAIMS_HOT = ['exp'];
+
 const MOCK_SCOPE = 'openid federated:read whoami:read';
 const DIRECT_ONLY_TOOLS = ['GrantAdminTool', 'DeleteAllTool'];
 
@@ -33,7 +36,7 @@ const DirectWhoamiPane = ({ response }) => {
     try { return JSON.parse(response?.result?.content?.[0]?.text); } catch { return null; }
   })();
   if (!backendClaims) return null;
-  return <JsonPane value={backendClaims.receivedClaims || backendClaims} testId="direct-whoami-claims" label="what the direct backend received" />;
+  return <JsonPane value={backendClaims.receivedClaims || backendClaims} testId="direct-whoami-claims" label="what the direct backend received" hot={CLAIMS_HOT} />;
 };
 
 export default function App() {
@@ -371,7 +374,7 @@ export default function App() {
                   {whoami && (!whoOk ? <Chip ok={false}>{whoami.status}</Chip>
                     : whoami.json?._meta?.unchanged === false ? <Chip ok={false}>token changed</Chip>
                       : <Chip ok>{whoami.json?._meta?.source === 'real' && whoami.json._meta.unchanged !== true ? '200 received' : 'token unchanged'}</Chip>)}
-                  {backendClaims && <JsonPane value={backendClaims.receivedClaims || backendClaims} testId="whoami-claims" label="what the backend received" />}
+                  {backendClaims && <JsonPane value={backendClaims.receivedClaims || backendClaims} testId="whoami-claims" label="what the backend received" hot={CLAIMS_HOT} />}
                 </div></div>
               <div className="wi-step"><span className="wi-step-num">4</span>
                 <div><strong>Control</strong> — garbage bearer.
@@ -423,7 +426,7 @@ export default function App() {
             {claims && (
               <>
                 <h3>Decoded claims</h3>
-                <JsonPane value={claims} testId="claims-view" label="IdP token claims" />
+                <JsonPane value={claims} testId="claims-view" label="IdP token claims" hot={CLAIMS_HOT} />
               </>
             )}
           </div>
@@ -468,6 +471,7 @@ export default function App() {
 
           <div className="wi-card">
             <h2>Two ways an agent identifies</h2>
+            <div className="lab-table-wrap">
             <table className="lab-table" data-testid="kinds-table">
               <thead><tr><th>Kind</th><th>Credential</th><th>Gateway check</th></tr></thead>
               <tbody>
@@ -475,6 +479,7 @@ export default function App() {
                 <tr><td>Workload identity</td><td>JWT from the caller's own platform</td><td>signature vs registered JWKS, iss/aud/claims</td></tr>
               </tbody>
             </table>
+            </div>
             <p className="muted">
               Mock mode exercises the identical check order in-process: signature → issuer → audience →
               required claims → lifetime → grant.
@@ -495,6 +500,7 @@ export default function App() {
             </p>
 
             <h3>Same fields, two places</h3>
+            <div className="lab-table-wrap">
             <table className="lab-table" data-testid="console-map">
               <thead><tr><th>On this page</th><th>In the Privilege console</th></tr></thead>
               <tbody>
@@ -507,6 +513,7 @@ export default function App() {
                 <tr><td>Step 3, the backend sees the token unchanged</td><td>The MCP server app: <strong>Auth Mode: Pass Agent Token</strong></td></tr>
               </tbody>
             </table>
+            </div>
             <p className="muted">
               Newer Privilege releases call a Non-Human Identity a Federated Identity. Same object.
             </p>

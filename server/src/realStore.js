@@ -39,6 +39,17 @@ export function formDefaults(env = process.env) {
   return { gatewayUrl: pick('WI_REAL_GATEWAY_URL'), pfUrl: pick('WI_REAL_PF_URL'), clientId: pick('WI_REAL_CLIENT_ID') };
 }
 
+// What the page may show about the secret: that one is set and, for a long secret, its last 4 characters
+// (enough to tell two secrets apart, never enough to use). Short secrets show no characters at all.
+export function secretHint(env = process.env) {
+  if (!connectionSource(env)) return { set: false, ends: null };
+  const secret = effectiveEnv(env).WI_REAL_CLIENT_SECRET || '';
+  return { set: true, ends: secret.length >= 16 ? `…${secret.slice(-4)}` : null };
+}
+
+// The saved secret, for a connect that leaves the secret blank to keep it (the page never has it).
+export const savedSecret = () => readSaved().WI_REAL_CLIENT_SECRET || '';
+
 export function saveConnection(values) {
   const data = clean(values);
   try {

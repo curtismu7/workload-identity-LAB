@@ -6,7 +6,7 @@ import { mintToken, decodeUnsafe, idpMeta } from './mockIdp.js';
 import { mcpCall, gatewayMeta, validateWorkloadToken } from './mockGateway.js';
 import { getMode, setMode } from './mode.js';
 import { realConfig, realHowTo, publicInfo, mintRealToken, holdToken, callGateway, passthroughVerdict, resolveBearer } from './realGateway.js';
-import { connectionSource, formDefaults, saveConnection, forgetConnection } from './realStore.js';
+import { connectionSource, formDefaults, saveConnection, forgetConnection, secretHint, savedSecret } from './realStore.js';
 import { mockTrace, realTrace, realFailureTrace } from './trace.js';
 import { install as installNetguard, report as netguardReport, assertMockZeroOutbound } from './netguard.js';
 import { listDiagrams, getDiagram } from './diagrams.js';
@@ -61,6 +61,7 @@ export function createApp() {
       real: cfg.ok ? publicInfo(cfg) : null, // hosts and ids only, never the secret
       realSource: connectionSource(), // 'saved' | 'memory' | 'env' | null: where the connection came from
       realForm: formDefaults(), // the three non-secret values, to prefill the Real button's form
+      realSecret: secretHint(), // { set, ends: '…abcd' | null }: never the secret itself
       idp: idpMeta, gateway: gatewayMeta,
       simulated: getMode() !== 'real',
     });
@@ -84,6 +85,8 @@ export function createApp() {
     // Trimmed first, so the value that is checked is exactly the value that gets saved (a pasted secret often has a trailing newline)
     const values = Object.fromEntries(Object.entries({ WI_REAL_GATEWAY_URL: b.gatewayUrl, WI_REAL_PF_URL: b.pfUrl, WI_REAL_CLIENT_ID: b.clientId, WI_REAL_CLIENT_SECRET: b.clientSecret })
       .map(([k, v]) => [k, typeof v === 'string' ? v.trim() : '']));
+    // A blank secret keeps the one already saved (the page shows only that one is saved, never its value)
+    if (!values.WI_REAL_CLIENT_SECRET) values.WI_REAL_CLIENT_SECRET = savedSecret();
     const cfg = realConfig({ ...process.env, ...values });
     if (!cfg.ok) {
       const bad = cfg.missing.length ? `Fill in ${cfg.missing.map(k => FIELD[k]).join(', ')}.` : `${cfg.invalid.map(k => FIELD[k]).join(' and ')} must be an https URL.`;

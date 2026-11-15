@@ -128,6 +128,10 @@ export default function App() {
     const s = await switchMode('real');
     if (s !== null) runDemo(s);
   };
+  // A saved secret is shown masked; the page never has it. Change reopens the form, a blank secret keeps the saved one.
+  const savedHint = (info?.realSource === 'saved' || info?.realSource === 'memory') && info?.realSecret?.set
+    ? `•••••• saved${info.realSecret.ends ? ` (ends ${info.realSecret.ends})` : ''}` : null;
+  const changeConnection = () => { setForm({ ...info.realForm, clientSecret: '' }); setConnectError(''); setShowConnect(true); };
   const cancelConnect = () => { setForm(f => ({ ...f, clientSecret: '' })); setConnectError(''); setShowConnect(false); };
   const connect = async (e) => {
     e.preventDefault();
@@ -340,6 +344,7 @@ export default function App() {
                   <label htmlFor="cx-secret">Client secret</label>
                   <input id="cx-secret" data-testid="connect-secret" type="password" autoComplete="new-password" spellCheck={false}
                     autoFocus={Boolean(form.gatewayUrl && form.pfUrl && form.clientId)}
+                    placeholder={savedHint ? `${savedHint}, leave blank to keep it` : undefined}
                     value={form.clientSecret || ''} onChange={e => setForm(f => ({ ...f, clientSecret: e.target.value }))} />
                 </div>
                 {connectError && <div className="lab-error" role="alert" data-testid="connect-error">{connectError}</div>}
@@ -364,8 +369,10 @@ export default function App() {
               <p className="muted wi-real-status" data-testid="real-status">
                 Connected: {info.real.pfHost} → {info.real.gatewayHost}, client {info.real.clientId}.{' '}
                 {CONNECTION_NOTE[info.realSource]}
+                {savedHint && <> <span data-testid="real-secret-hint">Client secret: {savedHint}.</span></>}
                 {(info.realSource === 'saved' || info.realSource === 'memory') && (
-                  <> <button type="button" className="wi-forget" data-testid="real-forget" onClick={forget}>Forget the saved connection</button></>
+                  <> <button type="button" className="wi-forget" data-testid="real-change" onClick={changeConnection} disabled={busy || connecting}>Change</button>
+                    {' '}<button type="button" className="wi-forget" data-testid="real-forget" onClick={forget}>Forget the saved connection</button></>
                 )}
               </p>
             )}

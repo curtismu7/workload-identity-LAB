@@ -48,7 +48,7 @@ docker compose up --build
     non-secret values alone in `.env` prefill the form.
   - Not connected → the Mode menu's Real option is disabled and `POST /api/mode {"source":"real"}`
     answers 409 naming what is missing.
-  - The server mints the token (`client_credentials`, `resource=<agent app URL>`), calls
+  - The server mints the token (`client_credentials`, `audience=<agent app URL>`), calls
     `<gateway>/<app>/mcp` with it, and calls the passthrough app's `whoami`. The client secret
     and the real token never reach the browser: the page gets an opaque handle and the decoded claims.
   - Step 3 compares the claims the backend reports with the ones minted, so "token unchanged"

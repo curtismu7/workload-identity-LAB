@@ -1,6 +1,6 @@
 // Real mode (rule 19): the verified live flow (AI-DEMO2 privilege/GATEWAY-WORKLOAD-IDENTITY-SETUP.md)
 // run server-side, so the PingFederate client secret and the real token never reach the browser.
-//   mint:    POST {pf}/as/token.oauth2  client_credentials, audience=<agent app URL>
+//   mint:    POST {idp}{profile.tokenPath}  client_credentials, <profile.audienceParam>=<agent app URL>
 //   door:    POST {gateway}/<app>/mcp   Authorization: Bearer <real token>
 // Every upstream call goes through callUpstream (rule 23: named errors, no blank 200s).
 import { randomBytes } from 'node:crypto';
@@ -19,13 +19,31 @@ function cleanBase(raw) {
   return u.origin + u.pathname.replace(/\/+$/, '');
 }
 
+// What differs between IdPs for the client_credentials mint. WI_REAL_IDP picks one (default pf); WI_REAL_SCOPES,
+// WI_REAL_TOKEN_PATH and WI_REAL_AUDIENCE_PARAM override single fields.
+//  pf: measured against the cluster PingFederate 13.1.3 (client pf-route-c-test): audience= picks the token manager,
+//      resource= is refused (invalid_target), and openid is refused for this client and, when allowed, selects the OIDC
+//      policy's token manager (wrong aud, no act), so the default scopes leave it out.
+//  p1: from PingOne's documentation, NEVER RUN against PingOne (owner-only). Its docs say the audience comes from the resource
+//      that owns the scopes (no audience parameter documented at the token endpoint), "the openid OIDC scope is always
+//      allowed", and give no token URL: /as/token under the issuer (https://auth.pingone.<region>/<envId>) is the known form.
+export const IDP_PROFILES = {
+  pf: { name: 'PingFederate', tokenPath: '/as/token.oauth2', audienceParam: 'audience', scopes: 'opensearch:read whoami:read' },
+  p1: { name: 'PingOne', tokenPath: '/as/token', audienceParam: '', scopes: 'openid opensearch:read whoami:read' },
+};
+
 export function realConfig(env = effectiveEnv()) {
   const missing = REAL_VARS.filter(k => !String(env[k] || '').trim());
   if (missing.length) return { ok: false, missing, invalid: [] };
   const gateway = cleanBase(env.WI_REAL_GATEWAY_URL);
   const pf = cleanBase(env.WI_REAL_PF_URL);
-  const invalid = [!gateway && 'WI_REAL_GATEWAY_URL', !pf && 'WI_REAL_PF_URL'].filter(Boolean);
+  const idp = String(env.WI_REAL_IDP || 'pf').trim().toLowerCase();
+  const tokenPath = String(env.WI_REAL_TOKEN_PATH || IDP_PROFILES[idp]?.tokenPath || '').trim();
+  const invalid = [!gateway && 'WI_REAL_GATEWAY_URL', !pf && 'WI_REAL_PF_URL', !IDP_PROFILES[idp] && 'WI_REAL_IDP', env.WI_REAL_TOKEN_PATH && !tokenPath.startsWith('/') && 'WI_REAL_TOKEN_PATH'].filter(Boolean);
   if (invalid.length) return { ok: false, missing: [], invalid };
+  const profile = IDP_PROFILES[idp];
+  // 'none' switches the audience parameter off (the IdP takes the audience from the scopes' resource)
+  const audienceParam = env.WI_REAL_AUDIENCE_PARAM ? (String(env.WI_REAL_AUDIENCE_PARAM).trim() === 'none' ? '' : String(env.WI_REAL_AUDIENCE_PARAM).trim()) : profile.audienceParam;
   const agentApp = String(env.WI_REAL_AGENT_APP || 'pftoken').trim();
   return {
     ok: true,
@@ -34,13 +52,16 @@ export function realConfig(env = effectiveEnv()) {
     secret: env.WI_REAL_CLIENT_SECRET,
     agentApp,
     rsApp: String(env.WI_REAL_RS_APP || 'pftoken-rs').trim(),
-    scopes: String(env.WI_REAL_SCOPES || 'opensearch:read whoami:read').trim(),
+    scopes: String(env.WI_REAL_SCOPES || profile.scopes).trim(),
+    idp, idpName: profile.name, tokenPath, audienceParam,
     audience: `${gateway}/${agentApp}/mcp`,
   };
 }
 
 export function realHowTo(cfg) {
   const how = 'Click the Real button on the page to connect (or set them in the app .env, see .env.example).';
+  if (cfg.invalid?.includes('WI_REAL_IDP')) return `WI_REAL_IDP must be one of ${Object.keys(IDP_PROFILES).join(', ')}. ${how}`;
+  if (cfg.invalid?.includes('WI_REAL_TOKEN_PATH')) return `WI_REAL_TOKEN_PATH must start with /. ${how}`;
   if (cfg.invalid?.length) return `Real mode needs https URLs for ${cfg.invalid.join(', ')}. ${how}`;
   return `Real mode needs ${cfg.missing.join(', ')}. ${how}`;
 }
@@ -50,6 +71,8 @@ export function publicInfo(cfg) {
   return {
     gatewayHost: new URL(cfg.gateway).host,
     pfHost: new URL(cfg.pf).host,
+    idp: cfg.idp,
+    idpName: cfg.idpName,
     clientId: cfg.clientId,
     agentApp: cfg.agentApp,
     rsApp: cfg.rsApp,
@@ -71,14 +94,14 @@ export const resolveBearer = (bearer) => held.get(bearer) ?? bearer;
 
 export async function mintRealToken(cfg, { scope, corrupt } = {}) {
   const form = new URLSearchParams({ grant_type: 'client_credentials', scope: scope || cfg.scopes });
-  // audience= (not resource=) picks the token manager on PingFederate 13.1.3: the JWT token manager has no Resource URIs
-  // table any more, so resource= is refused with invalid_target. Measured against the cluster PF, client pf-route-c-test:
+  // The audience parameter comes from the IdP profile (see IDP_PROFILES: PingFederate 13.1.3 wants audience=, resource= is
+  // refused with invalid_target; an empty name sends none). Measured against the cluster PF, client pf-route-c-test:
   // audience=<door> -> aud=<door>, act.sub, client_id; resource=<door> -> 400 invalid_target.
-  // Wrong-audience case: leave out audience=, so PingFederate's DEFAULT token manager answers. Where that default is another
+  // Wrong-audience case: leave out the audience parameter, so the IdP's DEFAULT token manager answers. Where that default is another
   // manager (wrong aud, no act) this is the mix-up the setup guide warns about and the gateway refuses it; where the client's
   // default IS the agent's manager (the cmuir-pf test client) the token is the same as the good one, so the case shows nothing.
-  if (corrupt !== 'wrong-audience') form.set('audience', cfg.audience);
-  const res = await callUpstream(`${cfg.pf}/as/token.oauth2`, {
+  if (cfg.audienceParam && corrupt !== 'wrong-audience') form.set(cfg.audienceParam, cfg.audience);
+  const res = await callUpstream(`${cfg.pf}${cfg.tokenPath}`, {
     method: 'POST',
     headers: {
       authorization: `Basic ${Buffer.from(`${cfg.clientId}:${cfg.secret}`).toString('base64')}`,
@@ -90,7 +113,7 @@ export async function mintRealToken(cfg, { scope, corrupt } = {}) {
   const body = await res.json().catch(() => ({}));
   if (!res.ok || !body.access_token) {
     const why = [body.error, body.error_description].filter(Boolean).join(': ') || 'no access_token in the response';
-    throw Object.assign(new Error(`PingFederate refused the token request (HTTP ${res.status}): ${why}`), { code: 'idp_refused' });
+    throw Object.assign(new Error(`${cfg.idpName} refused the token request (HTTP ${res.status}): ${why}`), { code: 'idp_refused' });
   }
   let token = body.access_token;
   if (corrupt === 'signature' && token.split('.').length === 3) token = corruptSignature(token);

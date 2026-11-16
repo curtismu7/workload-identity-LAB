@@ -89,7 +89,7 @@ export function createApp() {
     if (!values.WI_REAL_CLIENT_SECRET) values.WI_REAL_CLIENT_SECRET = savedSecret();
     const cfg = realConfig({ ...process.env, ...values });
     if (!cfg.ok) {
-      const bad = cfg.missing.length ? `Fill in ${cfg.missing.map(k => FIELD[k]).join(', ')}.` : `${cfg.invalid.map(k => FIELD[k]).join(' and ')} must be an https URL.`;
+      const bad = cfg.missing.length ? `Fill in ${cfg.missing.map(k => FIELD[k]).join(', ')}.` : cfg.invalid.every(k => FIELD[k]) ? `${cfg.invalid.map(k => FIELD[k]).join(' and ')} must be an https URL.` : realHowTo(cfg);
       return jsonError(res, 'bad_connection', bad, 400);
     }
     // The check is a real outbound call: run it as Real, so it never counts against Mock's zero-outbound proof.
@@ -118,7 +118,7 @@ export function createApp() {
       if (!cfg.ok) return jsonError(res, 'real_not_configured', realHowTo(cfg), 409);
       try {
         const m = await mintRealToken(cfg, { scope, corrupt });
-        return res.json({ token: holdToken(m.token), held: true, claims: m.claims, audience: m.audience, labelled: 'real PingFederate token (kept on the server)' });
+        return res.json({ token: holdToken(m.token), held: true, claims: m.claims, audience: m.audience, labelled: `real ${cfg.idpName} token (kept on the server)` });
       } catch (e) { return jsonError(res, e.code || 'idp_error', e.message); }
     }
     if (corrupt === 'wrong-audience') {

@@ -264,7 +264,7 @@ describe('Workload Identity Lab', () => {
 
   describe('the Real button', () => {
     const SECRET = 'fake-client-secret-DO-NOT-LEAK';
-    const REAL_SCOPES = 'openid opensearch:read whoami:read';
+    const REAL_SCOPES = 'opensearch:read whoami:read';
     const realInfo = (extra = {}) => ({ source: 'mock', realAvailable: true, realSource: 'saved', real: { pfHost: 'pf.example.com', gatewayHost: 'gw.example.com', clientId: 'pf-client', scopes: REAL_SCOPES }, realForm: { gatewayUrl: 'https://gw.example.com', pfUrl: 'https://pf.example.com', clientId: 'pf-client' }, simulated: true, ...extra });
     const callsTo = (part) => fetch.mock.calls.filter(([u]) => String(u).includes(part));
     // Not connected yet; a successful connect flips the server's answer to connected

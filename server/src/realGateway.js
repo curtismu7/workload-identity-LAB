@@ -34,7 +34,7 @@ export function realConfig(env = effectiveEnv()) {
     secret: env.WI_REAL_CLIENT_SECRET,
     agentApp,
     rsApp: String(env.WI_REAL_RS_APP || 'pftoken-rs').trim(),
-    scopes: String(env.WI_REAL_SCOPES || 'openid opensearch:read whoami:read').trim(),
+    scopes: String(env.WI_REAL_SCOPES || 'opensearch:read whoami:read').trim(),
     audience: `${gateway}/${agentApp}/mcp`,
   };
 }

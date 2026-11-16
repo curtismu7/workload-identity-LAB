@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import TopMenu, { applyFontSize } from './top-menu/TopMenu.jsx';
+import VerifyMark from './components/VerifyMark.jsx';
 import Diagram from './components/Diagram.jsx';
 import JsonPane from './components/JsonPane.jsx';
 import JwtBox from './components/JwtBox.jsx';
@@ -279,7 +280,9 @@ export default function App() {
           help={{ href: 'https://github.com/curtismu7/workload-identity-LAB#readme' }}
           version="v0.1.0"
           onReset={reset}
-        />
+        >
+          <VerifyMark id="workload-identity-lab" />
+        </TopMenu>
       </header>
       <main className="lab-main">
         <div className="sim-banner" data-testid="sim-banner">

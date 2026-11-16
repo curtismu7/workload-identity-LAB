@@ -1,6 +1,6 @@
 // Real mode (rule 19): the verified live flow (AI-DEMO2 privilege/GATEWAY-WORKLOAD-IDENTITY-SETUP.md)
 // run server-side, so the PingFederate client secret and the real token never reach the browser.
-//   mint:    POST {pf}/as/token.oauth2  client_credentials, resource=<agent app URL>
+//   mint:    POST {pf}/as/token.oauth2  client_credentials, audience=<agent app URL>
 //   door:    POST {gateway}/<app>/mcp   Authorization: Bearer <real token>
 // Every upstream call goes through callUpstream (rule 23: named errors, no blank 200s).
 import { randomBytes } from 'node:crypto';
@@ -71,9 +71,13 @@ export const resolveBearer = (bearer) => held.get(bearer) ?? bearer;
 
 export async function mintRealToken(cfg, { scope, corrupt } = {}) {
   const form = new URLSearchParams({ grant_type: 'client_credentials', scope: scope || cfg.scopes });
-  // Wrong-audience case: leave out resource=, so PingFederate's DEFAULT token manager answers
-  // (wrong aud, no act). That is the mix-up the setup guide warns about; the gateway refuses it.
-  if (corrupt !== 'wrong-audience') form.set('resource', cfg.audience);
+  // audience= (not resource=) picks the token manager on PingFederate 13.1.3: the JWT token manager has no Resource URIs
+  // table any more, so resource= is refused with invalid_target. Measured against the cluster PF, client pf-route-c-test:
+  // audience=<door> -> aud=<door>, act.sub, client_id; resource=<door> -> 400 invalid_target.
+  // Wrong-audience case: leave out audience=, so PingFederate's DEFAULT token manager answers. Where that default is another
+  // manager (wrong aud, no act) this is the mix-up the setup guide warns about and the gateway refuses it; where the client's
+  // default IS the agent's manager (the cmuir-pf test client) the token is the same as the good one, so the case shows nothing.
+  if (corrupt !== 'wrong-audience') form.set('audience', cfg.audience);
   const res = await callUpstream(`${cfg.pf}/as/token.oauth2`, {
     method: 'POST',
     headers: {

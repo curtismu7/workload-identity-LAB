@@ -35,34 +35,79 @@ claims pinning, no audit trail, no pass-through semantics.
   segmented control on theme tokens).
 - Governed door untouched (`git diff` on mockGateway.js empty across the commit).
 
-## Open items for the next session
-1. **muse-LAB stash**: `stash@{0}` in the lab repo holds another writer's WIP
-   (trace refactor: GatewayTrace.jsx, trace.js, trace.test.js + modifications to
-   app.js/mockGateway/realGateway). Do NOT drop it. It was stashed because it
-   conflicted with a checkout; their PR #2 work is merged, so the stash may need
-   a manual reconcile if they return.
-2. **mcp-surface-LAB**: the credentials pass-through test fails at
-   `App.test.jsx:130` (unchanged=false) — server logic makes false impossible
-   (forward returns the same string; digest compare deterministic), so it's a
-   test-side timing/stale-render race. Analysis on closed PR #6. Not a JsonPane
-   blocker.
-3. **Rule 24 sweep leftovers**: privilege-owasp-lab-LAB (parallel agent's PR was
-   open; re-check), the 5 one-writer labs (id-jag, mcp-tools, hostile-mcp,
-   agent-gateway-inspector, cimd), mcp-surface (needs the investigation first).
-4. **FORBIDDEN_STRINGS secret**: a2a-lab-LAB's history contains
-   `PingOneAuthorizeClient` (baseline commit a70e87a, a code-shape comment) —
-   2 history hits remain after my message fix. Owner decision: history rewrite
-   or drop the string from the secret.
-5. **Two JsonPane variants** exist in the family (my 183-line self-contained vs
-   the parallel agent's 251-line appfire-style with evidence/lanes + marks).
-   Worth unifying in a shared-service PR.
+## Open items: status (updated 2026-11-15, evening)
+All five items from this handoff are closed.
+
+1. **Stash: DONE, nothing to restore.** `stash@{0}` is mostly an older tree from before PR #2: it would delete
+   trace.js, GatewayTrace.jsx, the Real tests and JsonPane. Its only new content is a TopMenu change, which
+   AI-DEMO-Standalone #234 (merged) made canonical, so the lab picks it up with a normal top-menu re-pin. The
+   stash is kept, and also saved as the local branch `stash-wip-trace-refactor` in `~/Development/workload-identity-LAB`.
+2. **mcp-surface-LAB test: DONE, it was never a race.** Main passed the pass-through test 20/20. The closed PR #6
+   failed it 20/20: its `Bits.Json` wrapped the JWT string into `{ raw }`, so the `mock-token` text no longer
+   started with `eyJ`. The canonical JsonPane shows a bare JWT as text, so the test passes unchanged in
+   mcp-surface #8.
+3. **Rule 24 leftovers: DONE.** Merged: privilege-owasp #1, idjag-runner #6, cimd #14 + #15, hostile-mcp
+   #9 + #12, mcp-surface #8, mcp-tools #25, id-jag-standalone #23 + #25, and agent-gateway-inspector #8, #9, #10
+   and #13.
+   - agent-gateway-inspector #9 fixed the server suite, which had hung CI for 6 h: `createHealth()` was called
+     without the arguments it now needs, and `createApp` read `env` before declaring it.
+   - Owner decisions:
+     - hostile-mcp opens in the JSON view and keeps the exact `<IMPORTANT>` mark.
+     - agent-gateway-inspector keeps its marks and chips, with a JSON pane under each.
+     - cimd and id-jag show their single values as JsonPanes.
+     - mcp-tools keeps the confirm-dialog arguments as exact text.
+   - The J1 checker no longer reads regex literals as JSX (AI-DEMO-Standalone #260).
+   - Submodule pins: AI-DEMO-Standalone #240, #248 and #265.
+4. **FORBIDDEN_STRINGS: DONE before this session.** The a2a-lab-LAB secret was updated at 13:06Z, and main CI
+   reports 0 hits.
+5. **Two JsonPane variants: DONE.** a2a-lab #10 and workload-identity #7 replaced the 183-line Formatted | Raw
+   variant with the canonical 251-line Form | JSON one (AI-DEMO-Standalone `shared/json`, #224). The family now
+   has one JsonPane.
+
+### Also done this session (workload-identity-LAB)
+- **#7:** canonical JsonPane. GatewayTrace request and response are one uncapped transcript each, with the JSON
+  body in its own pane, and two tables are wrapped so the page has no sideways scroll at 375px.
+- **#11:** the Real form shows a saved client secret masked, as `•••••• saved (ends …abcd)`. The server sends
+  only the last 4 characters, and none for a secret shorter than 16. **Change** reopens the form, and a blank
+  secret keeps the saved one.
+- **Deployed:** the live container (`workload-identity-LAB-wt-deploy`, detached at origin/main 3a6e474) is
+  rebuilt from main.
+
+### Main rewritten (owner-approved)
+GitHub's squash merge added a co-author trailer naming the owner's own short noreply address to some commits,
+because they were authored with that address. That breaks rule 8. Mains were rewritten with
+force-with-lease, keeping the same trees:
+
+| Repo | Old | New |
+|---|---|---|
+| agent-gateway-inspector | 1337426, d926199 | 91d6a06, 4051117 |
+| id-jag-standalone | ab33b4b | a1df1bf |
+| AI-DEMO-Standalone | 3a45884, a23c877 | 38648f4, 1f9508d |
+
+Prevention: commit as `cmuir@pingidentity.com` or `49688644+curtismu7@users.noreply.github.com`, and always pass
+`--body` to `gh pr merge --squash`.
+
+### Still open (not this lab's work)
+- **Real mode has never run against the live tenant.** The owner generates a new secret for
+  `pf-route-c-test` in the cmuir-pf admin console (Applications → OAuth → Clients → Change Secret), then pastes
+  it once via **Run through Privilege (Real)**.
+- **AI-DEMO-Standalone PR #244** (`pin/gateway-claims-users`, another session) is still based on the
+  pre-rewrite commits and needs a rebase onto main. The shared `~/Development/AI-DEMO-Standalone` checkout and
+  its worktrees still have the old commits in local `main`: their owner should `git fetch` and reset to
+  `origin/main`.
+- **Optional checker follow-up:** J1 still has the same gap for a `<tag>` inside a string literal. It is a
+  false positive only for an unclosed tag followed by a pretty `JSON.stringify`.
+- **agent-gateway-inspector:** the restored marked block keeps its 256px cap. Removing it is one line in
+  `web/src/app.css`.
+- **id-jag-standalone:** `InspectPage.jsx:86` still shows its Actual column as `String(c.actual)`. The owner
+  decides whether it should match.
 
 ## How to run
 ```bash
 cd ~/Development/workload-identity-LAB
 docker compose up --build -d     # http://127.0.0.1:7816
 # dev: npm install, cd web && npm run build, PORT=7816 node server/src/index.js
-npm test                          # 43 server tests
-npx vitest run --root web         # 22 web tests
+npm test                          # 44 server tests
+npx vitest run --root web         # 26 web tests
 npm run doctor
 ```

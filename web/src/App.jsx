@@ -72,7 +72,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    api('/api/info').then(({ json }) => { setInfo(json); setModeState(json.source); });
+    api('/api/info').then(({ json }) => {
+      setInfo(json); setModeState(json.source);
+      // Opened while the server is already in Real mode: the box shows the Real scopes, not the Mock default (never a value already typed)
+      if (json.source === 'real' && json.real?.scopes) setScope(cur => (cur === MOCK_SCOPE ? json.real.scopes : cur));
+    });
     loadRuns();
   }, [loadRuns]);
 

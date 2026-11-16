@@ -279,6 +279,24 @@ describe('Workload Identity Lab', () => {
       });
     };
 
+    it('opened while the server is already in Real mode: the Token scope box shows the Real scopes, and a plain Run sends them', async () => {
+      const base = fetch.getMockImplementation();
+      fetch.mockImplementation((url, init) => (String(url).includes('/api/info') ? Promise.resolve(mockJson(200, realInfo({ source: 'real', simulated: false }))) : base(url, init)));
+      render(<App />);
+      await waitFor(() => expect(screen.getByTestId('scope-input')).toHaveValue(REAL_SCOPES));
+      await userEvent.click(screen.getByRole('button', { name: 'Run' }));
+      await waitFor(() => expect(callsTo('/api/idp/token')).toHaveLength(1));
+      expect(JSON.parse(callsTo('/api/idp/token')[0][1].body).scope).toBe(REAL_SCOPES);
+    });
+
+    it('opened in Mock mode the box keeps the Mock scopes, even when Real is available', async () => {
+      const base = fetch.getMockImplementation();
+      fetch.mockImplementation((url, init) => (String(url).includes('/api/info') ? Promise.resolve(mockJson(200, realInfo())) : base(url, init)));
+      render(<App />);
+      await waitFor(() => expect(screen.getByTestId('real-btn')).toBeTruthy());
+      expect(screen.getByTestId('scope-input')).toHaveValue('openid federated:read whoami:read');
+    });
+
     it('not connected: the button opens the form, prefilled, with an empty secret, and nothing runs', async () => {
       unconnected({ connect: () => ({ status: 200, body: { ok: true } }) });
       render(<App />);

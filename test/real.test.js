@@ -26,10 +26,13 @@ async function withReal(fn, { pfReply } = {}) {
     const form = new URLSearchParams(await readBody(req));
     const entry = { auth: req.headers.authorization, form: Object.fromEntries(form) };
     seen.pf.push(entry);
-    res.writeHead(pfReply ? pfReply.status : 200, { 'content-type': 'application/json' });
+    // PingFederate 13.1.3 refuses resource=: the JWT token manager has no Resource URIs table (invalid_target)
+    const refused = !pfReply && form.has('resource');
+    res.writeHead(pfReply ? pfReply.status : refused ? 400 : 200, { 'content-type': 'application/json' });
     if (pfReply) return res.end(JSON.stringify(pfReply.body));
-    // No resource= -> PingFederate's DEFAULT token manager answers: an opaque reference token
-    entry.token = form.has('resource') ? fakeJwt({ ...baseClaims, aud: form.get('resource') }) : 'opaque-reference-token';
+    if (refused) return res.end(JSON.stringify({ error: 'invalid_target', error_description: 'The specified resource(s) did not match any access token manager' }));
+    // No audience= -> PingFederate's DEFAULT token manager answers: an opaque reference token
+    entry.token = form.has('audience') ? fakeJwt({ ...baseClaims, aud: form.get('audience') }) : 'opaque-reference-token';
     return res.end(JSON.stringify({ access_token: entry.token, token_type: 'Bearer' }));
   });
   const gw = await listen(async (req, res) => {
@@ -113,12 +116,13 @@ test('real flow: mint -> tools/list -> whoami passthrough -> garbage control', a
     assert.equal(mint.json.claims.iss, 'https://fake-pf.test');
     assert.equal(mint.json.claims.aud, `${gwUrl}/pftoken/mcp`);
 
-    // PingFederate got the client credentials, the scope and resource=<agent app URL>
+    // PingFederate got the client credentials, the scope and audience=<agent app URL> (never resource=)
     const pfReq = seen.pf[0];
     assert.equal(pfReq.auth, `Basic ${Buffer.from(`pf-client:${SECRET}`).toString('base64')}`);
     assert.equal(pfReq.form.grant_type, 'client_credentials');
     assert.equal(pfReq.form.scope, 'openid whoami:read');
-    assert.equal(pfReq.form.resource, `${gwUrl}/pftoken/mcp`);
+    assert.equal(pfReq.form.audience, `${gwUrl}/pftoken/mcp`);
+    assert.ok(!('resource' in pfReq.form));
 
     // The browser never sees the secret or the real token
     const wire = JSON.stringify(mint.json);
@@ -195,11 +199,11 @@ test('real trace: whoami adds an observed Pass Agent Token decision', async () =
   });
 });
 
-test('wrong-audience case leaves out resource=, so the default token manager answers and the gateway refuses', async () => {
+test('wrong-audience case leaves out audience=, so the default token manager answers and the gateway refuses', async () => {
   await withReal(async ({ post, seen }) => {
     const mint = await post('/api/idp/token', { corrupt: 'wrong-audience' });
     assert.equal(mint.status, 200);
-    assert.ok(!('resource' in seen.pf[0].form));
+    assert.ok(!('audience' in seen.pf[0].form));
     assert.equal(mint.json.claims.note, 'opaque token (not a JWT)');
     const gw = await post('/api/gateway/federated-agent/mcp', LIST, { authorization: `Bearer ${mint.json.token}` });
     assert.equal(gw.status, 401);

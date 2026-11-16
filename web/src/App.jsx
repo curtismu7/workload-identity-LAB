@@ -61,6 +61,7 @@ export default function App() {
   const [directWhoami, setDirectWhoami] = useState(null);
   const [breakResult, setBreakResult] = useState(null); // Break-it outcomes: {tampered, escalated}
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState(''); // a true statement about the run that is not an error (a wrong-audience case that was not wrong)
   const [showConnect, setShowConnect] = useState(false); // the Real button's form
   const [form, setForm] = useState({ gatewayUrl: '', pfUrl: '', clientId: '', clientSecret: '' });
   const [connecting, setConnecting] = useState(false);
@@ -157,7 +158,7 @@ export default function App() {
   };
 
   const runDemo = async (scopeToUse = scope, pathToUse = path) => {
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setNotice('');
     setClaims(null); setToken(null); setTokenHeld(false); setGatewayResult(null); setWhoami(null); setControl(null); setTraces([]); setDirectResult(null); setDirectWhoami(null); setBreakResult(null);
     const addTrace = (step, title, r) => {
       if (r.json?._meta?.trace) setTraces(prev => [...prev, { step, title, status: r.status, trace: r.json._meta.trace }]);
@@ -173,6 +174,7 @@ export default function App() {
         return;
       }
       setToken(mint.json.token);
+      setNotice(mint.json.notice || '');
       setTokenHeld(Boolean(mint.json.held));
       setClaims(mint.json.claims);
       await logRun('1 mint', true, `IdP issued a token (aud=${mint.json.claims?.aud})`);
@@ -302,6 +304,7 @@ export default function App() {
           but the credential comes from outside.
         </p>
         {error && <div className="lab-error" role="alert" data-testid="mode-error">{error}</div>}
+        {notice && <div className="sim-banner" role="note" data-testid="mint-notice">{notice}</div>}
 
         <section className="wi-grid">
           <div className="wi-card">

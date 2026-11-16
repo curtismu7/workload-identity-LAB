@@ -289,6 +289,24 @@ describe('Workload Identity Lab', () => {
       expect(JSON.parse(callsTo('/api/idp/token')[0][1].body).scope).toBe(REAL_SCOPES);
     });
 
+    it('a mint reply with a notice shows it as a note (not an error), and the next run clears it', async () => {
+      const base = fetch.getMockImplementation();
+      let first = true;
+      fetch.mockImplementation((url, init) => {
+        const u = String(url);
+        if (u.includes('/api/info')) return Promise.resolve(mockJson(200, realInfo({ source: 'real', simulated: false })));
+        if (u.includes('/api/idp/token')) { const notice = first ? 'Nothing wrong was sent.' : undefined; first = false; return Promise.resolve(mockJson(200, { token: 't', held: true, claims: { aud: 'a' }, audience: 'a', ...(notice && { notice }) })); }
+        return base(url, init);
+      });
+      render(<App />);
+      await waitFor(() => expect(screen.getByTestId('scope-input')).toHaveValue(REAL_SCOPES));
+      await userEvent.click(screen.getByRole('button', { name: 'Run' }));
+      expect(await screen.findByTestId('mint-notice')).toHaveTextContent('Nothing wrong was sent.');
+      expect(screen.queryByTestId('mode-error')).toBeNull();
+      await userEvent.click(screen.getByRole('button', { name: 'Run' }));
+      await waitFor(() => expect(screen.queryByTestId('mint-notice')).toBeNull());
+    });
+
     it('opened in Mock mode the box keeps the Mock scopes, even when Real is available', async () => {
       const base = fetch.getMockImplementation();
       fetch.mockImplementation((url, init) => (String(url).includes('/api/info') ? Promise.resolve(mockJson(200, realInfo())) : base(url, init)));

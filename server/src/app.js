@@ -118,7 +118,12 @@ export function createApp() {
       if (!cfg.ok) return jsonError(res, 'real_not_configured', realHowTo(cfg), 409);
       try {
         const m = await mintRealToken(cfg, { scope, corrupt });
-        return res.json({ token: holdToken(m.token), held: true, claims: m.claims, audience: m.audience, labelled: `real ${cfg.idpName} token (kept on the server)` });
+        // The wrong-audience case only means something if the IdP answered with another audience. Where the client's default
+        // token manager IS the agent's (the cmuir-pf test client), the token is the good one: say so instead of showing a "wrong" token that is right.
+        const notice = corrupt === 'wrong-audience' && [].concat(m.claims?.aud ?? []).includes(m.audience)
+          ? `The wrong-audience case sent no audience, hoping ${cfg.idpName}'s default token manager would answer with another one. It issued the correct audience (this client's default token manager is the agent's), so nothing wrong was sent and the gateway will accept the token. The case shows a mix-up only where the client's default manager is a different one.`
+          : undefined;
+        return res.json({ token: holdToken(m.token), held: true, claims: m.claims, audience: m.audience, labelled: `real ${cfg.idpName} token (kept on the server)`, ...(notice && { notice }) });
       } catch (e) { return jsonError(res, e.code || 'idp_error', e.message); }
     }
     if (corrupt === 'wrong-audience') {

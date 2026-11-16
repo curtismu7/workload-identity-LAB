@@ -19,7 +19,7 @@ const url = (s) => `http://127.0.0.1:${s.address().port}`;
 const ENV_KEYS = ['WI_REAL_GATEWAY_URL', 'WI_REAL_PF_URL', 'WI_REAL_CLIENT_ID', 'WI_REAL_CLIENT_SECRET'];
 const clearEnv = () => ENV_KEYS.forEach(k => delete process.env[k]);
 
-async function withReal(fn, { pfReply } = {}) {
+async function withReal(fn, { pfReply, defaultIsAgent } = {}) {
   const seen = { pf: [], gw: [] };
   const baseClaims = { iss: 'https://fake-pf.test', sub: 'pf-client', client_id: 'pf-client', act: { sub: 'agent-1' }, scope: 'openid whoami:read', iat: 1700000000, exp: 1700003600 };
   const pf = await listen(async (req, res) => {
@@ -32,7 +32,8 @@ async function withReal(fn, { pfReply } = {}) {
     if (pfReply) return res.end(JSON.stringify(pfReply.body));
     if (refused) return res.end(JSON.stringify({ error: 'invalid_target', error_description: 'The specified resource(s) did not match any access token manager' }));
     // No audience= -> PingFederate's DEFAULT token manager answers: an opaque reference token
-    entry.token = form.has('audience') ? fakeJwt({ ...baseClaims, aud: form.get('audience') }) : 'opaque-reference-token';
+    // defaultIsAgent: the client's default token manager IS the agent's (the cmuir-pf test client), so the audience is right with or without audience=
+    entry.token = form.has('audience') || defaultIsAgent ? fakeJwt({ ...baseClaims, aud: form.get('audience') || `${url(gw)}/pftoken/mcp` }) : 'opaque-reference-token';
     return res.end(JSON.stringify({ access_token: entry.token, token_type: 'Bearer' }));
   });
   const gw = await listen(async (req, res) => {
@@ -250,6 +251,19 @@ test('wrong-audience case leaves out audience=, so the default token manager ans
     assert.equal(gw.status, 401);
     assert.equal(gw.json._meta.stage, 'token_not_found');
   });
+});
+
+test('wrong-audience case where the IdP answers with the CORRECT audience anyway: the reply says nothing wrong was sent', async () => {
+  await withReal(async ({ post, seen, gwUrl }) => {
+    const wrong = await post('/api/idp/token', { corrupt: 'wrong-audience' });
+    assert.equal(wrong.status, 200);
+    assert.ok(!('audience' in seen.pf[0].form), 'the case still sends no audience parameter');
+    assert.equal(wrong.json.claims.aud, `${gwUrl}/pftoken/mcp`);
+    assert.match(wrong.json.notice, /nothing wrong was sent/);
+    assert.ok(!JSON.stringify(wrong.json).includes(SECRET), 'no secret in the reply');
+    assert.equal((await post('/api/idp/token', {})).json.notice, undefined, 'no notice on a normal run');
+    assert.equal((await post('/api/idp/token', { corrupt: 'signature' })).json.notice, undefined, 'no notice on the other negative cases');
+  }, { defaultIsAgent: true });
 });
 
 test('signature case changes only the signature and the gateway refuses it', async () => {

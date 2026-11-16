@@ -98,6 +98,12 @@ test('real config rejects a non-https gateway URL', () => {
   assert.deepEqual(cfg.invalid, ['WI_REAL_GATEWAY_URL']);
 });
 
+test('real config asks for client-credentials scopes only: PingFederate refuses openid for such a client (invalid_scope)', () => {
+  const base = { WI_REAL_GATEWAY_URL: 'https://gateway.example.com', WI_REAL_PF_URL: 'https://pf.example.com', WI_REAL_CLIENT_ID: 'c', WI_REAL_CLIENT_SECRET: 's' };
+  assert.equal(realConfig(base).scopes, 'opensearch:read whoami:read');
+  assert.equal(realConfig({ ...base, WI_REAL_SCOPES: 'mcp whoami:read' }).scopes, 'mcp whoami:read'); // WI_REAL_SCOPES still overrides
+});
+
 test('real flow: mint -> tools/list -> whoami passthrough -> garbage control', async () => {
   await withReal(async ({ post, seen, gwUrl }) => {
     const mint = await post('/api/idp/token', { scope: 'openid whoami:read' });

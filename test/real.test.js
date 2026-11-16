@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import dns from 'node:dns';
 import { createApp } from '../server/src/app.js';
-import { parseGatewayBody, passthroughVerdict, holdToken, realConfig } from '../server/src/realGateway.js';
+import { parseGatewayBody, passthroughVerdict, holdToken, realConfig, mintRealToken, IDP_PROFILES } from '../server/src/realGateway.js';
 import { report as netguardReport, assertMockZeroOutbound } from '../server/src/netguard.js';
 
 const SECRET = 'fake-client-secret-DO-NOT-LEAK';
@@ -105,6 +105,47 @@ test('real config asks for client-credentials scopes only: PingFederate refuses 
   const base = { WI_REAL_GATEWAY_URL: 'https://gateway.example.com', WI_REAL_PF_URL: 'https://pf.example.com', WI_REAL_CLIENT_ID: 'c', WI_REAL_CLIENT_SECRET: 's' };
   assert.equal(realConfig(base).scopes, 'opensearch:read whoami:read');
   assert.equal(realConfig({ ...base, WI_REAL_SCOPES: 'mcp whoami:read' }).scopes, 'mcp whoami:read'); // WI_REAL_SCOPES still overrides
+});
+
+const BASE = { WI_REAL_GATEWAY_URL: 'https://gateway.example.com', WI_REAL_PF_URL: 'https://idp.example.com', WI_REAL_CLIENT_ID: 'c', WI_REAL_CLIENT_SECRET: 's' };
+
+test('IdP profiles: pf is the default; p1 changes the token path, the audience parameter and the scopes; each field can be overridden', () => {
+  const pf = realConfig(BASE);
+  assert.deepEqual([pf.idp, pf.idpName, pf.tokenPath, pf.audienceParam, pf.scopes], ['pf', 'PingFederate', '/as/token.oauth2', 'audience', 'opensearch:read whoami:read']);
+  const p1 = realConfig({ ...BASE, WI_REAL_IDP: 'p1' });
+  assert.deepEqual([p1.idp, p1.idpName, p1.tokenPath, p1.audienceParam, p1.scopes], ['p1', 'PingOne', '/as/token', '', 'openid opensearch:read whoami:read']);
+  assert.ok(!IDP_PROFILES.pf.scopes.split(' ').includes('openid'), 'PingFederate refuses openid for client_credentials, or picks another token manager');
+  const over = realConfig({ ...BASE, WI_REAL_IDP: 'p1', WI_REAL_SCOPES: 'whoami:read', WI_REAL_TOKEN_PATH: '/x/token', WI_REAL_AUDIENCE_PARAM: 'resource' });
+  assert.deepEqual([over.scopes, over.tokenPath, over.audienceParam], ['whoami:read', '/x/token', 'resource']);
+  assert.equal(realConfig({ ...BASE, WI_REAL_AUDIENCE_PARAM: 'none' }).audienceParam, '', "'none' sends no audience parameter");
+  assert.equal(realConfig({ ...BASE, WI_REAL_IDP: 'P1' }).idp, 'p1', 'the name is case-insensitive');
+  assert.deepEqual(realConfig({ ...BASE, WI_REAL_IDP: 'okta' }).invalid, ['WI_REAL_IDP']);
+  assert.deepEqual(realConfig({ ...BASE, WI_REAL_TOKEN_PATH: 'as/token' }).invalid, ['WI_REAL_TOKEN_PATH']);
+});
+
+test('the mint follows the profile: path, audience parameter and error wording', async () => {
+  const seen = [];
+  const idp = await listen(async (req, res) => {
+    seen.push({ path: req.url, form: Object.fromEntries(new URLSearchParams(await readBody(req))) });
+    const bad = req.url === '/fail';
+    res.writeHead(bad ? 400 : 200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(bad ? { error: 'invalid_client' } : { access_token: fakeJwt({ aud: 'x', client_id: 'c' }), token_type: 'Bearer' }));
+  });
+  try {
+    const env = { ...BASE, WI_REAL_PF_URL: url(idp) };
+    await mintRealToken(realConfig(env));
+    assert.equal(seen[0].path, '/as/token.oauth2');
+    assert.equal(seen[0].form.audience, 'https://gateway.example.com/pftoken/mcp');
+    await mintRealToken(realConfig({ ...env, WI_REAL_IDP: 'p1' }));
+    assert.equal(seen[1].path, '/as/token');
+    assert.equal(seen[1].form.scope, 'openid opensearch:read whoami:read');
+    assert.deepEqual(Object.keys(seen[1].form).filter(k => /audience|resource/.test(k)), [], 'p1 sends no audience parameter');
+    await mintRealToken(realConfig({ ...env, WI_REAL_AUDIENCE_PARAM: 'resource' }));
+    assert.equal(seen[2].form.resource, 'https://gateway.example.com/pftoken/mcp');
+    assert.ok(!('audience' in seen[2].form));
+    await assert.rejects(() => mintRealToken(realConfig({ ...env, WI_REAL_IDP: 'p1', WI_REAL_TOKEN_PATH: '/fail' })),
+      (e) => e.code === 'idp_refused' && /^PingOne refused the token request \(HTTP 400\): invalid_client$/.test(e.message));
+  } finally { idp.close(); }
 });
 
 test('real flow: mint -> tools/list -> whoami passthrough -> garbage control', async () => {

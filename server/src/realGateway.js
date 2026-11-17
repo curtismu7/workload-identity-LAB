@@ -125,6 +125,10 @@ const ID_HEADERS = ['x-request-id', 'x-correlation-id', 'x-amzn-trace-id', 'trac
 // The response headers worth showing on the trace panel (an allowlist: nothing else is passed on).
 const SHOWN_HEADERS = ['content-type', ...ID_HEADERS, 'www-authenticate', 'mcp-session-id', 'date'];
 
+// An MCP session id is a bearer-like handle for that session: show its first 8 characters, never the whole id
+// (the same shape the other labs' traces use).
+export const shortSession = (id) => `${String(id).slice(0, 8)}… (shortened)`;
+
 // A gateway reply is JSON or a Server-Sent-Events stream carrying the JSON-RPC message.
 export function parseGatewayBody(contentType, text) {
   const t = String(text || '').trim();
@@ -151,7 +155,8 @@ export async function callGateway(cfg, appName, bearer, rpc) {
   }, { timeoutMs: 60000 });
   const body = parseGatewayBody(res.headers.get('content-type'), await res.text());
   const requestId = ID_HEADERS.map(h => res.headers.get(h)).find(Boolean) || null;
-  const headers = Object.fromEntries(SHOWN_HEADERS.map(h => [h, res.headers.get(h)]).filter(([, v]) => v));
+  const headers = Object.fromEntries(SHOWN_HEADERS.map(h => [h, res.headers.get(h)]).filter(([, v]) => v)
+    .map(([h, v]) => [h, h === 'mcp-session-id' ? shortSession(v) : v]));
   const where = `${new URL(cfg.gateway).host}/${appName}/mcp`;
   const refused = res.status >= 400;
   return {

@@ -458,7 +458,7 @@ export default function App() {
             )}
           </div>
 
-          <div className="wi-card" data-testid="comparison-card">
+          <div className="wi-card wi-card-wide" data-testid="comparison-card">
             <h2>What the direct path misses</h2>
             <p className="muted">
               The direct path is an agent calling the backend with no gateway in between — in production that is

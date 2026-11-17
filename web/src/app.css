@@ -24,16 +24,16 @@ body { font-size: 1.125rem; }
   .shell-nav { order: 3; flex-basis: 100%; }
 }
 
-/* Page frame (section 3): one centred 1100px container */
+/* Page frame: wide centred container (was 1100px) so the JSON panes get the screen */
 .sim-banner { margin: 0 0 24px; padding: 12px 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); color: var(--text); font-size: 0.9375rem; line-height: 1.45; }
-.lab-main { max-width: 1100px; margin: 0 auto; padding: 20px 0 48px; }
+.lab-main { max-width: 2200px; margin: 0 auto; padding: 20px 0 48px; }
 .lab-main h1 { margin: 0 0 14px; font-size: clamp(1.5rem, 1rem + 1.6vw, 2.125rem); line-height: 1.2; text-wrap: balance; }
 .lab-lead { margin: 0 0 28px; max-width: 72ch; font-size: 1.25rem; font-weight: 700; line-height: 1.5; color: var(--text); }
 .lab-error { margin: 0 0 20px; padding: 12px 16px; border: 1px solid var(--accent); border-radius: 8px; color: var(--text); font-weight: 600; }
 
 /* Cards: two columns while each card is wide enough for the form (min-width: 0 stops long tokens stretching the grid) */
 .wi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-@media (max-width: 1100px) { .wi-grid { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .wi-grid { grid-template-columns: 1fr; } }
 .wi-card { min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px 24px 24px; border-top: 3px solid var(--accent); }
 .wi-card h2 { margin: 0 0 18px; font-size: 1.375rem; line-height: 1.25; }
 .wi-card h3 { margin: 22px 0 10px; font-size: 1.125rem; }

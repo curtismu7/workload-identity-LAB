@@ -11,6 +11,8 @@ services:
     # Real mode (owner-only): click Real on the page and paste the PingFederate client secret once. It is saved
     # on the volume below (mode 600), never in the repo or the image. Alternatively the four WI_REAL_* values
     # can live in the app's own .env (never committed, kept out of the image by .dockerignore; see .env.example).
+    # WI_REAL_MODE=1 in the .env starts the lab in Real when the connection is complete (rule 26: sticky boot
+    # mode, a rebuild cannot silently drop the lab back to Mock).
     env_file:
       - path: .env
         required: false

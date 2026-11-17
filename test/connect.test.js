@@ -12,7 +12,7 @@ import { getMode } from '../server/src/mode.js';
 import { forgetConnection } from '../server/src/realStore.js';
 
 const SECRET = 'fake-client-secret-DO-NOT-LEAK';
-const ENV_KEYS = ['WI_REAL_GATEWAY_URL', 'WI_REAL_PF_URL', 'WI_REAL_CLIENT_ID', 'WI_REAL_CLIENT_SECRET'];
+const ENV_KEYS = ['WI_REAL_GATEWAY_URL', 'WI_REAL_PF_URL', 'WI_REAL_CLIENT_ID', 'WI_REAL_CLIENT_SECRET', 'WI_REAL_MODE'];
 const listen = (handler) => new Promise(r => { const s = http.createServer(handler); s.listen(0, '127.0.0.1', () => r(s)); });
 const url = (s) => `http://127.0.0.1:${s.address().port}`;
 
@@ -48,6 +48,27 @@ async function withApp(fn, { configDir } = {}) {
     delete process.env.WI_CONFIG_DIR;
   }
 }
+
+// Rule 26 (owner, 2026-11-17): the boot mode is sticky. WI_REAL_MODE=1 starts the lab in Real when the
+// connection is complete; without it (or with the connection incomplete) the lab starts in Mock. These
+// drive mode.js's boot read directly, each in a fresh child process so the module-level boot value is honest.
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const bootSource = (env) => {
+  const code = "import('./server/src/mode.js').then(m => console.log(m.getMode()))";
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', code], { env: { ...process.env, ...env }, cwd: path.dirname(fileURLToPath(import.meta.url)) + '/..', encoding: 'utf8' });
+  return r.stdout.trim();
+};
+
+test('rule 26: WI_REAL_MODE=1 boots Real only when the connection is complete, else Mock', () => {
+  const full = { WI_REAL_GATEWAY_URL: 'https://g.example.com', WI_REAL_PF_URL: 'https://pf.example.com', WI_REAL_CLIENT_ID: 'c', WI_REAL_CLIENT_SECRET: 's', WI_CONFIG_DIR: '/dev/null/not-a-directory' };
+  assert.equal(bootSource({ ...full, WI_REAL_MODE: '1' }), 'real');
+  assert.equal(bootSource({ ...full, WI_REAL_MODE: 'real' }), 'real');
+  assert.equal(bootSource({ ...full, WI_REAL_MODE: '' }), 'mock');
+  assert.equal(bootSource({ ...full, WI_REAL_MODE: 'true' }), 'mock', 'only 1 or the word real opt in');
+  assert.equal(bootSource({ WI_REAL_MODE: '1' }), 'mock', 'no complete connection: Real cannot stick, Mock keeps working');
+});
 
 test('connect checks the client at PingFederate, saves it mode 600, and the secret is in no response', async () => {
   await withApp(async ({ post, get, json, form, seen, file }) => {

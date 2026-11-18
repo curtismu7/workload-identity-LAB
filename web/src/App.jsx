@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import TopMenu, { applyFontSize } from './top-menu/TopMenu.jsx';
+import TalkTrackDialog from "./talk-track/TalkTrackDialog.jsx";
+import talkMd from "../../docs/talk-track.md?raw";
 import VerifyMark from './components/VerifyMark.jsx';
 import Diagram from './components/Diagram.jsx';
 import JsonPane from './components/JsonPane.jsx';
@@ -43,6 +45,15 @@ const DirectWhoamiPane = ({ response }) => {
 export default function App() {
   const [info, setInfo] = useState(null);
   const [theme, setTheme] = useState('auto');
+  const [talkOpen, setTalkOpen] = useState(false);
+  const talkSteps = (() => {
+    const steps = []; let n = 0;
+    for (const line of talkMd.split("\\n")) {
+      const m = line.match(/^\d+\.\s+\*\*(.+?)\.\*\*\s*(.*)$/);
+      if (m) { n += 1; steps.push({ id: `s${n}`, title: m[1], say: m[2] }); }
+    }
+    return steps.length ? steps : [{ id: "s1", title: "Talk track", say: talkMd.slice(0, 600) }];
+  })();
   const [fontSize, setFontSize] = useState('M');
   const [mode, setModeState] = useState('mock');
   const [scope, setScope] = useState(MOCK_SCOPE);
@@ -282,6 +293,7 @@ export default function App() {
         <TopMenu
           mode={{ value: mode, onChange: switchMode, realAvailable: info?.realAvailable, realHint: 'Click “Run through Privilege (Real)” on the page to connect first' }}
           theme={{ value: theme, onChange: setTheme }}
+          talkTrack={{ active: talkOpen, onToggle: () => setTalkOpen((v) => !v) }}
           fontSize={{ value: fontSize, onChange: setFontSize }}
           help={{ href: 'https://github.com/curtismu7/workload-identity-LAB#readme' }}
           version="v0.1.0"
@@ -581,3 +593,5 @@ export default function App() {
     </>
   );
 }
+      <TalkTrackDialog isOpen={talkOpen} onClose={() => setTalkOpen(false)} talk={talkSteps} />
+

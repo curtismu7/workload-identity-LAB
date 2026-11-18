@@ -10,17 +10,16 @@ import '../diagram-kit/diagram-kit.css';
 // with a speed control (rule 5). Arrow labels and the expanding boxes come from the
 // shared diagram kit (./diagram-kit, vendored byte for byte): labels sit above the boxes and
 // clear of each other; click a box and it expands in place with its group, reach and arrows.
-const GROUP_COLORS = { red: '#b3232a', blue: '#1f5aa8', amber: '#b06d00', grey: '#5b6770', dark: '#22282e' };
 const HANDLES = [['t', Position.Top], ['b', Position.Bottom], ['l', Position.Left], ['r', Position.Right]];
 const layout = (i) => ({ x: 60 + (i % 2) * 260, y: 40 + i * 78 });
 const initialNodes = (d) => d.nodes.map((n, i) => ({
   id: n.id, type: 'box', position: layout(i),
-  data: { id: n.id, label: `${n.label}`, color: GROUP_COLORS[d.groups?.[n.group]?.color] || '#5b6770' },
+  data: { id: n.id, label: `${n.label}`, color: d.groups?.[n.group]?.color || 'grey' }, // the group's colour NAME; app.css maps it to a token
 }));
 
 function Box({ data }) {
   return (
-    <div className={`wi-node${data.passport ? ' dk-open' : ''}`} style={{ borderColor: data.color }} data-testid={`wi-node-${data.id}`}>
+    <div className={`wi-node${data.passport ? ' dk-open' : ''}`} data-color={data.color} data-testid={`wi-node-${data.id}`}>
       {HANDLES.map(([k, pos]) => (
         <span key={k}>
           <Handle id={`s-${k}`} type="source" position={pos} className="wi-handle" />

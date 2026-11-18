@@ -115,6 +115,12 @@ body { font-size: 1.125rem; }
 /* Boxes: the group's colour is the border (inline); the expanded box (the kit's .dk-open) is wider and its details read left to right. */
 .wi-node { border: 2px solid var(--muted); border-radius: 8px; background: var(--surface, #fff); color: inherit; font-size: 12px; padding: 6px; max-width: 240px; }
 .wi-node.dk-open { min-width: 18rem; max-width: 22rem; text-align: left; }
+/* The group's colour is the box border: the document names it, these are the tokens (no colours in the markup). */
+.wi-node[data-color="red"] { border-color: var(--box-red); }
+.wi-node[data-color="blue"] { border-color: var(--box-blue); }
+.wi-node[data-color="amber"] { border-color: var(--status-warn); }
+.wi-node[data-color="grey"] { border-color: var(--box-grey); }
+.wi-node[data-color="dark"] { border-color: var(--box-dark); }
 .wi-handle { opacity: 0; pointer-events: none; }
 /* Arrow labels are drawn by the diagram kit (./diagram-kit): the walked arrow's label keeps this page's focus colour. */
 .wi-diagram-canvas { --dk-active: var(--focus); --dk-active-text: var(--status-info); }

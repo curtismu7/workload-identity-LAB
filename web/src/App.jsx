@@ -319,8 +319,9 @@ export default function App() {
         {notice && <div className="sim-banner" role="note" data-testid="mint-notice">{notice}</div>}
 
         <section className="wi-grid">
+          <div className="duo">
           <div className="wi-card">
-            <h2>Run the flow</h2>
+            <h2><span className="step-num" aria-hidden="true">1</span>Run the flow</h2>
             <div className="field-row">
               <label htmlFor="scope">Token scope</label>
               <input id="scope" data-testid="scope-input" value={scope} onChange={e => setScope(e.target.value)} />
@@ -454,9 +455,10 @@ export default function App() {
               )}
             </div>
           </div>
+          </div>
 
           <div className="wi-card">
-            <h2>The token (raw, education)</h2>
+            <h2><span className="step-num" aria-hidden="true">2</span>The token (raw, education)</h2>
             {token
               ? (tokenHeld
                 ? <p className="muted" data-testid="token-held">The real token stays on the server and is never shown here. The decoded claims below are what the gateway checks.</p>
@@ -471,7 +473,7 @@ export default function App() {
           </div>
 
           <div className="wi-card wi-card-wide" data-testid="comparison-card">
-            <h2>What the direct path misses</h2>
+            <h2><span className="step-num" aria-hidden="true">3</span>What the direct path misses</h2>
             <p className="muted">
               The direct path is an agent calling the backend with no gateway in between — in production that is
               exactly what happens when an agent holds a token for the backend directly. The gateway path is what
@@ -492,11 +494,13 @@ export default function App() {
           </div>
 
           <div className="wi-card wi-card-wide">
+            <h2><span className="step-num" aria-hidden="true">4</span>Gateway trace</h2>
             <GatewayTrace exchanges={traces} source={mode} />
           </div>
 
+          <div className="duo">
           <div className="wi-card">
-            <h2>Run log</h2>
+            <h2><span className="step-num" aria-hidden="true">5</span>Run log</h2>
             <div className="wi-runlog" data-testid="run-log">
               {runs.length === 0 && <p className="muted">No runs yet.</p>}
               {runs.map((r, i) => (
@@ -509,7 +513,7 @@ export default function App() {
           </div>
 
           <div className="wi-card">
-            <h2>Two ways an agent identifies</h2>
+            <h2><span className="step-num" aria-hidden="true">6</span>Two ways an agent identifies</h2>
             <div className="lab-table-wrap">
             <table className="lab-table" data-testid="kinds-table">
               <thead><tr><th>Kind</th><th>Credential</th><th>Gateway check</th></tr></thead>
@@ -526,12 +530,12 @@ export default function App() {
           </div>
 
           <div className="wi-card" style={{ gridColumn: '1 / -1' }}>
-            <h2>The hop chain</h2>
+            <h2><span className="step-num" aria-hidden="true">7</span>The hop chain</h2>
             <Diagram diagramId="workload-identity-flow" theme={theme === 'auto' ? (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : theme} />
           </div>
 
           <div className="wi-card wi-card-wide" data-testid="privilege-proof">
-            <h2>Show it in Privilege</h2>
+            <h2><span className="step-num" aria-hidden="true">8</span>Show it in Privilege</h2>
             <p className="wi-prose">
               {mode === 'real'
                 ? 'Every Run on this page sent real requests to the Privilege gateway. The console shows how it is set up, and the gateway log shows it accepting the call.'
@@ -588,10 +592,11 @@ export default function App() {
                 </p>
               )}
           </div>
+          </div>
         </section>
       </main>
+      <TalkTrackDialog isOpen={talkOpen} onClose={() => setTalkOpen(false)} talk={talkSteps} />
     </>
   );
 }
-      <TalkTrackDialog isOpen={talkOpen} onClose={() => setTalkOpen(false)} talk={talkSteps} />
 

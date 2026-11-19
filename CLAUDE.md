@@ -21,7 +21,7 @@ server/src/realStore.js). A complete saved connection wins over the app .env (se
 not connected -> 409 naming the missing ones. The secret is never in any response, log or the browser.
 Real mints a real PingFederate token and
 calls the real gateway server-side (server/src/realGateway.js); the secret and the real token
-never reach the browser. Netguard tags each attempt with its mode, so Real runs never count
+never reach the browser (the one exception is the opt-in demo flag `WI_SHOW_REAL_TOKEN=1`, off by default, which shows the minted token in step 1). Netguard tags each attempt with its mode, so Real runs never count
 against the Mock zero-outbound proof. `.env` stays out of the image (.dockerignore).
 Toggle lives in the TopMenu; POST /api/mode switches at runtime.
 

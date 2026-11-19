@@ -189,6 +189,19 @@ describe('Workload Identity Lab', () => {
     expect(await screen.findByTestId('raw-token-copy-state')).toHaveTextContent(/Copied|Select and copy/);
   });
 
+  it('the JWT box has a Decode toggle: header and payload decoded, then back to raw', async () => {
+    render(<App />);
+    await userEvent.click(await screen.findByTestId('run-btn'));
+    await screen.findByTestId('raw-token-text');
+    await userEvent.click(screen.getByTestId('raw-token-decode'));
+    expect(screen.getByTestId('raw-token-decoded-header')).toHaveTextContent('"alg": "RS256"');
+    expect(screen.getByTestId('raw-token-decoded-payload')).toHaveTextContent('"iss": "test"');
+    expect(screen.getByTestId('raw-token-decoded-signature')).toHaveTextContent('fakesig');
+    expect(screen.queryByTestId('raw-token-text')).toBeNull();
+    await userEvent.click(screen.getByTestId('raw-token-decode'));
+    expect((await screen.findByTestId('raw-token-text')).textContent).toMatch(/^eyJ/);
+  });
+
   it('json panes offer Form | JSON and render claims in both', async () => {
     render(<App />);
     await userEvent.click(await screen.findByTestId('run-btn'));

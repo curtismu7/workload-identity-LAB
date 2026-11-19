@@ -61,6 +61,7 @@ export default function App() {
   const [claims, setClaims] = useState(null);
   const [token, setToken] = useState(null);
   const [tokenHeld, setTokenHeld] = useState(false); // Real mode: the token stays on the server
+  const [rawToken, setRawToken] = useState(null); // Real mode, only when the server runs with WI_SHOW_REAL_TOKEN=1
   const [gatewayResult, setGatewayResult] = useState(null);
   const [whoami, setWhoami] = useState(null);
   const [control, setControl] = useState(null);
@@ -113,7 +114,7 @@ export default function App() {
   };
 
   // Results belong to the mode that produced them: a Real run must never be shown under the Simulated caption
-  const clearResults = () => { setClaims(null); setToken(null); setTokenHeld(false); setGatewayResult(null); setWhoami(null); setControl(null); setTraces([]); setDirectResult(null); setDirectWhoami(null); setBreakResult(null); };
+  const clearResults = () => { setClaims(null); setToken(null); setTokenHeld(false); setRawToken(null); setGatewayResult(null); setWhoami(null); setControl(null); setTraces([]); setDirectResult(null); setDirectWhoami(null); setBreakResult(null); };
 
   const switchMode = async (next) => {
     setError('');
@@ -170,7 +171,7 @@ export default function App() {
 
   const runDemo = async (scopeToUse = scope, pathToUse = path) => {
     setBusy(true); setError(''); setNotice('');
-    setClaims(null); setToken(null); setTokenHeld(false); setGatewayResult(null); setWhoami(null); setControl(null); setTraces([]); setDirectResult(null); setDirectWhoami(null); setBreakResult(null);
+    setClaims(null); setToken(null); setTokenHeld(false); setRawToken(null); setGatewayResult(null); setWhoami(null); setControl(null); setTraces([]); setDirectResult(null); setDirectWhoami(null); setBreakResult(null);
     const addTrace = (step, title, r) => {
       if (r.json?._meta?.trace) setTraces(prev => [...prev, { step, title, status: r.status, trace: r.json._meta.trace }]);
     };
@@ -187,6 +188,7 @@ export default function App() {
       setToken(mint.json.token);
       setNotice(mint.json.notice || '');
       setTokenHeld(Boolean(mint.json.held));
+      setRawToken(mint.json.rawToken || null);
       setClaims(mint.json.claims);
       await logRun('1 mint', true, `IdP issued a token (aud=${mint.json.claims?.aud})`);
       if (pathToUse === 'direct') {
@@ -402,12 +404,18 @@ export default function App() {
             <div className="wi-steps">
               <div className="wi-step"><span className="wi-step-num">1</span>
                 <div><strong>Mint</strong> — the IdP issues a JWT for the agent.
-                  {claims && <Chip ok>{claims.iss || claims.note}</Chip>}</div></div>
+                  {claims && <Chip ok>{claims.iss || claims.note}</Chip>}
+                  {rawToken && <JwtBox value={rawToken} testId="real-token" label="The JWT as minted by the IdP" />}</div></div>
               <div className="wi-step"><span className="wi-step-num">2</span>
                 <div><strong>Gateway check</strong> — <code>tools/list</code> with the JWT.
                   {gatewayResult && (gwOk ? <Chip ok>200 accepted</Chip> : <Chip ok={false}>{gatewayResult.status} {gatewayResult.json?._meta?.stage}</Chip>)}
                   {gatewayResult && <div className="wi-claims" data-testid="gateway-log">{gatewayResult.json?._meta?.log}</div>}
-                  {gwOk && <div data-testid="tool-list">{(gatewayResult.json?.result?.tools || []).map(t => t.name).join(', ')}</div>}
+                  {gwOk && (
+                    <div className="wi-tools-box">
+                      <div className="wi-tools-label">Tools returned ({(gatewayResult.json?.result?.tools || []).length})</div>
+                      <div data-testid="tool-list">{(gatewayResult.json?.result?.tools || []).map(t => t.name).join(', ')}</div>
+                    </div>
+                  )}
                 </div></div>
               <div className="wi-step"><span className="wi-step-num">3</span>
                 <div><strong>Pass Agent Token</strong> — the backend reports what it received.
@@ -461,7 +469,7 @@ export default function App() {
             <h2><span className="step-num" aria-hidden="true">2</span>The token (raw, education)</h2>
             {token
               ? (tokenHeld
-                ? <p className="muted" data-testid="token-held">The real token stays on the server and is never shown here. The decoded claims below are what the gateway checks.</p>
+                ? <p className="muted" data-testid="token-held">{rawToken ? 'The real token is shown in step 1 (demo flag). ' : 'The real token stays on the server and is never shown here. '}The decoded claims below are what the gateway checks.</p>
                 : <JwtBox value={token} testId="raw-token" />)
               : <p className="muted">Press Run to mint one.</p>}
             {claims && (

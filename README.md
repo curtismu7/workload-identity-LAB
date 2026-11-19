@@ -46,6 +46,9 @@ docker compose up --build
     `WI_REAL_CLIENT_SECRET` in a `.env` beside the compose file (gitignored, kept out of the image by
     `.dockerignore`; see `.env.example`). A complete saved connection wins over `.env`. The three
     non-secret values alone in `.env` prefill the form.
+  - Demo flag, off by default: `WI_SHOW_REAL_TOKEN=1` in the `.env` makes the server also return the minted token, and step 1 shows it
+    (with Copy and a Decode toggle for header / payload / signature). Without it the token never reaches the browser. Use it only on a
+    presenter's own machine; the token is short-lived but is a live credential until it expires.
   - Not connected → the Mode menu's Real option is disabled and `POST /api/mode {"source":"real"}`
     answers 409 naming what is missing.
   - The server mints the token (`client_credentials`, `audience=<agent app URL>`), calls

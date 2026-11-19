@@ -113,7 +113,7 @@ body { font-size: 1.125rem; }
 /* Diagram canvas */
 .wi-diagram-canvas { height: 420px; border: 1px solid var(--border); border-radius: 8px; }
 /* Boxes: the group's colour is the border (inline); the expanded box (the kit's .dk-open) is wider and its details read left to right. */
-.wi-node { border: 2px solid var(--muted); border-radius: 8px; background: var(--surface, #fff); color: inherit; font-size: 12px; padding: 6px; max-width: 240px; }
+.wi-node { border: 2px solid var(--muted); border-radius: 8px; background: var(--wi-node-bg); color: inherit; font-size: 12px; padding: 6px; max-width: 240px; }
 .wi-node.dk-open { min-width: 18rem; max-width: 22rem; text-align: left; }
 /* The group's colour is the box border: the document names it, these are the tokens (no colours in the markup). */
 .wi-node[data-color="red"] { border-color: var(--box-red); }

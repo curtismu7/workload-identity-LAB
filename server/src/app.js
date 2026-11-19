@@ -123,7 +123,9 @@ export function createApp() {
         const notice = corrupt === 'wrong-audience' && [].concat(m.claims?.aud ?? []).includes(m.audience)
           ? `The wrong-audience case sent no audience, hoping ${cfg.idpName}'s default token manager would answer with another one. It issued the correct audience (this client's default token manager is the agent's), so nothing wrong was sent and the gateway will accept the token. The case shows a mix-up only where the client's default manager is a different one.`
           : undefined;
-        return res.json({ token: holdToken(m.token), held: true, claims: m.claims, audience: m.audience, labelled: `real ${cfg.idpName} token (kept on the server)`, ...(notice && { notice }) });
+        return res.json({ token: holdToken(m.token), held: true, claims: m.claims, audience: m.audience, labelled: `real ${cfg.idpName} token (kept on the server)`, ...(notice && { notice }),
+          // Demo-only, off by default: WI_SHOW_REAL_TOKEN=1 sends the minted token to the page so step 1 can show it.
+          ...(process.env.WI_SHOW_REAL_TOKEN === '1' && { rawToken: m.token }) });
       } catch (e) { return jsonError(res, e.code || 'idp_error', e.message); }
     }
     if (corrupt === 'wrong-audience') {

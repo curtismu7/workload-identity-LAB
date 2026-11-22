@@ -2,3 +2,6 @@ node_modules/
 web/dist/
 .env
 *.log
+
+# Filled live environments hold real settings: never commit them.
+postman/*.live.environment.json

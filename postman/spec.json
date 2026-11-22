@@ -1,0 +1,156 @@
+{
+  "name": "Workload Identity LAB",
+  "slug": "workload-identity-lab",
+  "description": "API collection for Workload Identity LAB: the federated-agent hop chain. Mint a federated token at the mock IdP, decode it, and call the mock MCP server both directly and through the gateway with it; the runs and netguard logs record every hop. Keys are in-process mocks (issuer .invalid); the lab has no live mode unless the owner connects a real IdP.",
+  "baseUrl": "http://localhost:7816",
+  "env": {},
+  "variables": {
+    "IDP_TOKEN": "filled by the Mint a federated token request's test script"
+  },
+  "folders": [
+    {
+      "name": "Sanity",
+      "description": "Health, build info, the IdP discovery metadata and JWKS, and the diagram catalog.",
+      "requests": [
+        {
+          "name": "Health",
+          "method": "GET",
+          "path": "/api/health",
+          "tests": [
+            "pm.response.to.have.status(200);",
+            "pm.expect(pm.response.json().ok).to.eql(true);"
+          ]
+        },
+        {
+          "name": "Info",
+          "method": "GET",
+          "path": "/api/info",
+          "tests": [
+            "pm.response.to.have.status(200);"
+          ]
+        },
+        {
+          "name": "IdP discovery metadata",
+          "method": "GET",
+          "path": "/api/idp/meta",
+          "tests": [
+            "pm.response.to.have.status(200);",
+            "pm.expect(pm.response.json().issuer).to.include('.invalid');"
+          ]
+        },
+        {
+          "name": "IdP JWKS",
+          "method": "GET",
+          "path": "/api/idp/jwks",
+          "tests": [
+            "pm.response.to.have.status(200);",
+            "pm.expect(pm.response.json().keys.length).to.be.above(0);"
+          ]
+        },
+        {
+          "name": "Diagram catalog",
+          "method": "GET",
+          "path": "/api/diagrams",
+          "tests": [
+            "pm.response.to.have.status(200);",
+            "pm.expect(pm.response.json().diagrams.length).to.be.above(0);"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Token and hops",
+      "description": "Mint a federated token at the mock IdP (chained into the calls via the IDP_TOKEN collection variable), decode it, then call the mock MCP server direct and through the gateway. Runs and the netguard log record every hop.",
+      "requests": [
+        {
+          "name": "Mint a federated token",
+          "method": "POST",
+          "path": "/api/idp/token",
+          "body": {
+            "appId": "payments-agent"
+          },
+          "tests": [
+            "pm.response.to.have.status(200);",
+            "pm.expect(pm.response.json().token).to.include('.');",
+            "pm.collectionVariables.set('IDP_TOKEN', pm.response.json().token);"
+          ]
+        },
+        {
+          "name": "Decode the token",
+          "method": "POST",
+          "path": "/api/idp/decode",
+          "body": {
+            "token": "{{IDP_TOKEN}}"
+          },
+          "tests": [
+            "pm.response.to.have.status(200);"
+          ]
+        },
+        {
+          "name": "Decode garbage (negative)",
+          "method": "POST",
+          "path": "/api/idp/decode",
+          "body": {
+            "token": "garbage"
+          },
+          "tests": [
+            "pm.expect(pm.response.code).to.eql(400);",
+            "pm.expect(pm.response.json().error).to.eql('undecodable');"
+          ]
+        },
+        {
+          "name": "MCP call through the gateway",
+          "method": "POST",
+          "path": "/api/gateway/payments-agent/mcp",
+          "body": {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list"
+          },
+          "tests": [
+            "pm.response.to.have.status(200);",
+            "pm.expect(pm.response.json().result.tools.length).to.be.above(0);"
+          ],
+          "headers": {
+            "Authorization": "Bearer {{IDP_TOKEN}}"
+          }
+        },
+        {
+          "name": "MCP call direct",
+          "method": "POST",
+          "path": "/api/direct/payments-agent/mcp",
+          "body": {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/list"
+          },
+          "tests": [
+            "pm.response.to.have.status(200);",
+            "pm.expect(pm.response.json().result.tools.length).to.be.above(0);"
+          ],
+          "headers": {
+            "Authorization": "Bearer {{IDP_TOKEN}}"
+          }
+        },
+        {
+          "name": "Run history",
+          "method": "GET",
+          "path": "/api/runs",
+          "tests": [
+            "pm.response.to.have.status(200);",
+            "pm.expect(pm.response.json().runs).to.be.an('array');"
+          ]
+        },
+        {
+          "name": "Netguard log (no outbound)",
+          "method": "GET",
+          "path": "/api/netguard",
+          "tests": [
+            "pm.response.to.have.status(200);",
+            "pm.expect(pm.response.json().ok).to.eql(true);"
+          ]
+        }
+      ]
+    }
+  ]
+}

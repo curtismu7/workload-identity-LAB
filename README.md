@@ -25,6 +25,16 @@ wrong audience — the classic "token served by the default token manager" mix-u
 (401 at the audience stage).
 
 ## Run (Docker, OrbStack)
+
+### Postman
+
+`postman/workload-identity-lab.postman_collection.json` drives the hop chain without the UI: mint a federated token at the mock IdP (chained via the \`IDP_TOKEN\` collection variable), decode it (with the undecodable negative), call the mock MCP server through the gateway and direct, then read the run history and the netguard log. No environment needed — keys are in-process mocks on a `.invalid` issuer.
+
+```
+node ../../shared/postman/generator.mjs --spec postman/spec.json            # regenerate (never hand-edit the output)
+npx newman run postman/workload-identity-lab.postman_collection.json
+```
+
 ```bash
 docker compose up --build
 # → http://127.0.0.1:7816  (lab-proxy: https://local.ping-devops.com:8443/workload-identity/)

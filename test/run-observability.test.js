@@ -74,8 +74,9 @@ test('a Mock run records one simulated row per step and one stdout line per gate
     // One stdout line per gateway decision; the line carries the row's own time
     assert.equal(lines.length, 3);
     lines.forEach((line, i) => assert.ok(line.startsWith(gwRows[i].at), `line ${i} carries the row time`));
-    assert.match(lines[0], /step=gateway-tools-list actor=workload-identity-lab result=passed run=run-test-mock-0001$/);
-    assert.match(lines[2], /step=gateway-control actor=workload-identity-lab result=stopped run=run-test-mock-0001$/);
+    // The run id on the line is shortened (first 4, last 2) because the masker replaces UUID-like ids
+    assert.match(lines[0], /step=gateway-tools-list actor=workload-identity-lab result=passed run=run-\.\.01$/);
+    assert.match(lines[2], /step=gateway-control actor=workload-identity-lab result=stopped run=run-\.\.01$/);
     lines.forEach((line) => assert.doesNotMatch(line, MATCHER_WORDS, `no matcher word in: ${line}`));
   });
   setDecisionWriter((l) => console.log(l));

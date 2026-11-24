@@ -133,7 +133,8 @@ export default function App() {
   const loadRecord = async (id) => {
     try {
       const { status, json } = await api(`/api/observability/${encodeURIComponent(id)}`);
-      if (status === 200 && json && json.runId === id && Array.isArray(json.rows)) { setRecord(json); setRecordError(''); return; }
+      // The record's runId is masked by the shared masker (a UUID), so only its shape is checked here; the page clears the record on every Run.
+      if (status === 200 && json && typeof json.runId === 'string' && Array.isArray(json.rows)) { setRecord(json); setRecordError(''); return; }
       setRecord(null); setRecordError(json?.message || `The run record could not be read (HTTP ${status}).`);
     } catch {
       setRecord(null); setRecordError('The run record could not be read.');

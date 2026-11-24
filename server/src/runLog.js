@@ -37,10 +37,13 @@ function startRun(mode, id) {
   return run;
 }
 
+// The run id is a UUID, which the shared masker replaces; the line keeps the first 4 and last 2 characters (the core's rule for a declared id).
+const shortRun = (id) => (id === '-' ? '-' : `${id.slice(0, 4)}..${id.slice(-2)}`);
+
 // One stdout line per gateway decision. A throwing writer drops this one line and nothing else.
 function decide({ at, step, result, runId }) {
   try {
-    writeLine(`${at} ${LAB} decision step=${clean(step)} actor=${clean(LAB)} result=${result} run=${clean(runId)}`);
+    writeLine(`${at} ${LAB} decision step=${clean(step)} actor=${clean(LAB)} result=${result} run=${clean(shortRun(runId))}`);
   } catch (e) {
     console.error(`run-log: decision line not written (${e?.code || 'error'})`);
   }

@@ -293,6 +293,7 @@ export default function App() {
           <a href="./" aria-current="page" data-testid="nav-lab">Federated agents</a>
         </nav>
         <TopMenu
+          postman={{ repo: "curtismu7/workload-identity-LAB", slug: "workload-identity-lab" }}
           mode={{ value: mode, onChange: switchMode, realAvailable: info?.realAvailable, realHint: 'Click “Run through Privilege (Real)” on the page to connect first' }}
           theme={{ value: theme, onChange: setTheme }}
           talkTrack={{ active: talkOpen, onToggle: () => setTalkOpen((v) => !v) }}

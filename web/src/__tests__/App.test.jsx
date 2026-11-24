@@ -218,6 +218,35 @@ describe('Workload Identity Lab', () => {
     expect(screen.getByTestId('claims-view')).toHaveTextContent('iss');
   });
 
+  it('a mint that began no run: the page asks for no record', async () => {
+    const base = fetch.getMockImplementation();
+    fetch.mockImplementation((url, init) => {
+      if (String(url).includes('/api/idp/token')) return Promise.resolve(mockJson(409, { error: 'real_not_configured', message: 'connect PingFederate first', run_began: false }));
+      return base(url, init);
+    });
+    render(<App />);
+    await userEvent.click(await screen.findByTestId('run-btn'));
+    expect(await screen.findByText(/connect PingFederate first/)).toBeInTheDocument();
+    expect(fetch.mock.calls.some(([u]) => String(u).includes('/api/observability/'))).toBe(false);
+  });
+
+  it('Reset is refused while a Run is busy: it sends nothing to the server and says why', async () => {
+    const base = fetch.getMockImplementation();
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    fetch.mockImplementation((url, init) => {
+      if (String(url).includes('/api/idp/token')) return gate.then(() => base(url, init));
+      return base(url, init);
+    });
+    render(<App />);
+    await userEvent.click(await screen.findByTestId('run-btn'));
+    await userEvent.click(screen.getByTestId('reset'));
+    expect(fetch.mock.calls.some(([u]) => String(u).includes('/api/reset'))).toBe(false);
+    expect(await screen.findByText(/Reset is unavailable while a run is in progress/)).toBeInTheDocument();
+    release();
+    await waitFor(() => expect(screen.getByTestId('run-btn')).not.toBeDisabled());
+  });
+
   it('negative case shows the refusal stage', async () => {
     fetch.mockImplementation((url, init) => {
       if (String(url).includes('/api/gateway/federated-agent/mcp')) return Promise.resolve(mockJson(401, { error: 'unauthorized', stage: 'audience', detail: 'aud mismatch', _meta: { log: 'rejected: audience mismatch' } }));

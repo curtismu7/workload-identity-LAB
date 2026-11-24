@@ -196,6 +196,7 @@ export default function App() {
 
   const runDemo = async (scopeToUse = scope, pathToUse = path) => {
     setBusy(true); setError(''); setNotice('');
+    let began = false; // whether this run was kept on the server: only then is there a record to read
     setClaims(null); setToken(null); setTokenHeld(false); setRawToken(null); setGatewayResult(null); setWhoami(null); setControl(null); setTraces([]); setDirectResult(null); setDirectWhoami(null); setBreakResult(null); setRecord(null); setRecordError('');
     // The gateway path is recorded (rule 27); the direct comparison is not, so it sends no run id.
     const runId = pathToUse === 'direct' ? null : newRunId();
@@ -207,6 +208,7 @@ export default function App() {
     try {
       // Step 1: mint
       const mint = await api('/api/idp/token', { scope: scopeToUse, corrupt: corrupt || undefined }, idOnly);
+      began = mint.status === 200 || mint.json.run_began === true;
       if (mint.status !== 200) {
         // Real mode: PingFederate (or the config) said no. Name it and stop; there is no token to send.
         const why = mint.json.message || `The token request failed (HTTP ${mint.status})`;
@@ -267,7 +269,7 @@ export default function App() {
     } catch (e) {
       setError(String(e.message || e));
     } finally {
-      if (runId) await loadRecord(runId);
+      if (runId && began) await loadRecord(runId);
       setBusy(false);
     }
   };
@@ -298,6 +300,8 @@ export default function App() {
   };
 
   const reset = async () => {
+    // A Run in progress owns the page: clearing now would wipe its results and let its late steps re-create a partial record.
+    if (busy) { setError('Reset is unavailable while a run is in progress. Wait for it to finish, then press Reset.'); return; }
     await api('/api/reset', {});
     clearResults(); setRuns([]);
   };

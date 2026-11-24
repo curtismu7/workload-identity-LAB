@@ -117,7 +117,7 @@ export function createApp() {
     if (getMode() === 'real') {
       // Real PingFederate. The token stays on the server; the browser gets an opaque handle + decoded claims.
       const cfg = realConfig();
-      if (!cfg.ok) return jsonError(res, 'real_not_configured', realHowTo(cfg), 409);
+      if (!cfg.ok) return res.status(409).json({ error: 'real_not_configured', message: realHowTo(cfg), run_began: false });
       try {
         const m = await mintRealToken(cfg, { scope, corrupt });
         recordMint({ runId: rid, mode: 'real', message: 'PingFederate issued the agent a token (kept on the server)' });
@@ -130,8 +130,9 @@ export function createApp() {
           // Demo-only, off by default: WI_SHOW_REAL_TOKEN=1 sends the minted token to the page so step 1 can show it.
           ...(process.env.WI_SHOW_REAL_TOKEN === '1' && { rawToken: m.token }) });
       } catch (e) {
-        if (e.code === 'idp_refused') recordMint({ runId: rid, mode: 'real', message: 'PingFederate refused to issue the agent a token' });
-        return jsonError(res, e.code || 'idp_error', e.message);
+        // A refusal is kept on the run as info; run_began tells the page whether there is a record to read.
+        const began = e.code === 'idp_refused' && recordMint({ runId: rid, mode: 'real', message: 'PingFederate refused to issue the agent a token' });
+        return res.status(502).json({ error: e.code || 'idp_error', message: e.message, run_began: began });
       }
     }
     if (corrupt === 'wrong-audience') {

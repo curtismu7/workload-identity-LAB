@@ -12,7 +12,7 @@ const LABEL = { 'gateway-tools-list': 'tools/list', 'gateway-passthrough': 'whoa
 const RESULT = { allowed: 'passed', refused: 'stopped', info: 'unclear', 'no-reply': 'no-reply' };
 const CAP_PER_MODE = 20;
 
-const runs = new Map(); // `${mode}|${runId}` -> { id, mode, startedAt, events: [], open: true }
+const runs = new Map(); // `${mode}|${runId}` -> { id, mode, startedAt, events: [] }
 let writeLine = (line) => console.log(line);
 
 // Tests swap the writer; the default writes one line to stdout.
@@ -23,16 +23,14 @@ export const stepFrom = (h) => (STEPS.has(h) ? h : 'gateway-call');
 const clean = (v) => String(v ?? '').replace(/[^A-Za-z0-9._:/@-]/g, '').slice(0, 80) || '-';
 const keyOf = (mode, id) => `${mode}|${id}`;
 
+// Kept per mode, oldest dropped first. A run never has to end to be kept: the list is bounded by age, so a run that stopped early
+// (a refused mint, a thrown step) cannot fill it and push later runs out of the record.
 function startRun(mode, id) {
   const key = keyOf(mode, id);
   if (runs.has(key)) return runs.get(key);
-  const inMode = [...runs.values()].filter((r) => r.mode === mode);
-  if (inMode.length >= CAP_PER_MODE) {
-    const oldestClosed = [...runs.entries()].find(([, r]) => r.mode === mode && !r.open);
-    if (!oldestClosed) return null; // every kept run is still open: never evict an open run
-    runs.delete(oldestClosed[0]);
-  }
-  const run = { id, mode, startedAt: new Date().toISOString(), events: [], open: true };
+  const inMode = [...runs].filter(([, r]) => r.mode === mode);
+  if (inMode.length >= CAP_PER_MODE) runs.delete(inMode[0][0]);
+  const run = { id, mode, startedAt: new Date().toISOString(), events: [] };
   runs.set(key, run);
   return run;
 }
@@ -55,20 +53,20 @@ function note({ runId, mode, layer, outcome, message, step, decision }) {
   const run = validRunId(runId) ? startRun(mode, runId) : null;
   // A call that got no reply is no row: only its decision line says so.
   if (run && outcome !== 'no-reply') run.events.push({ at, layer, outcome, message });
-  if (run && step === 'gateway-control') run.open = false;
   if (decision) decide({ at, step, result: RESULT[outcome] ?? 'unclear', runId: run ? runId : '-' });
   return run;
 }
 
-// A mint (issuance) is info: it is a credential check, never an allow or a refusal.
+// A mint (issuance) is info: it is a credential check, never an allow or a refusal. Returns true when the run began (was kept).
 export function recordMint({ runId, mode, message }) {
-  if (runId === undefined) return; // not part of a run
-  note({ runId, mode, layer: 'agent', outcome: 'info', message });
+  if (runId === undefined) return false; // not part of a run
+  return note({ runId, mode, layer: 'agent', outcome: 'info', message }) !== null;
 }
 
-// A gateway reply is a policy decision (allowed or refused) only when the status says so; any other status is info.
+// A gateway reply is a policy decision (allowed or refused) only when the status says so; a 401 is the gateway's bearer check (a credential
+// check, info), and any other status is info too.
 function gatewayOutcome(status, body) {
-  if (status === 401 || status === 403) return 'refused';
+  if (status === 403) return 'refused';
   if (status === 200 && (body?.error || body?.result?.isError)) return 'refused';
   if (status === 200) return 'allowed';
   return 'info';

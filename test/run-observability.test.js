@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from '../server/src/app.js';
 import { setMode } from '../server/src/mode.js';
-import { setDecisionWriter, recordMint, recordGatewayReply, recordGatewayNoReply, recordFor, clearRuns } from '../server/src/runLog.js';
+import { setDecisionWriter, recordMint, recordGatewayReply, recordGatewayNoReply, recordFor, clearRuns, hasRun } from '../server/src/runLog.js';
 import { assertRunObservability } from '../server/src/runObservability.js';
 import { checkPin } from '../scripts/run-observability-checkPin.mjs';
 
@@ -61,7 +61,7 @@ test('a Mock run records one simulated row per step and one stdout line per gate
     assert.equal(rec.source, 'mock');
     assert.equal(rec.runId, runId);
     const gwRows = rec.rows.filter((x) => x.layer === 'gateway');
-    assert.deepEqual(gwRows.map((x) => x.outcome), ['allowed', 'allowed', 'refused']);
+    assert.deepEqual(gwRows.map((x) => x.outcome), ['allowed', 'allowed', 'info']); // the control's 401 is a credential check, not a refusal
     assert.ok(gwRows.every((x) => x.origin === 'simulated'), 'mock rows are simulated, never logged');
     assert.equal(rec.coverage.gateway, 'simulated');
     assert.equal(rec.coverage.person, 'not-logged');
@@ -76,7 +76,7 @@ test('a Mock run records one simulated row per step and one stdout line per gate
     lines.forEach((line, i) => assert.ok(line.startsWith(gwRows[i].at), `line ${i} carries the row time`));
     // The run id on the line is shortened (first 4, last 2) because the masker replaces UUID-like ids
     assert.match(lines[0], /step=gateway-tools-list actor=workload-identity-lab result=passed run=run-\.\.01$/);
-    assert.match(lines[2], /step=gateway-control actor=workload-identity-lab result=stopped run=run-\.\.01$/);
+    assert.match(lines[2], /step=gateway-control actor=workload-identity-lab result=unclear run=run-\.\.01$/);
     lines.forEach((line) => assert.doesNotMatch(line, MATCHER_WORDS, `no matcher word in: ${line}`));
   });
   setDecisionWriter((l) => console.log(l));
@@ -188,9 +188,57 @@ test('a 200 that carries a JSON-RPC error is refused, not allowed', async () => 
   setDecisionWriter((l) => console.log(l));
 });
 
-test('this lab keeps no RUN_OBS_ name in its server code (it reads no logs)', () => {
-  const dir = path.join(ROOT, 'server', 'src');
-  const hits = fs.readdirSync(dir).filter((f) => /\.js$/.test(f) && f !== 'runObservability.js')
-    .filter((f) => fs.readFileSync(path.join(dir, f), 'utf8').includes('RUN_OBS_'));
-  assert.deepEqual(hits, []);
+test('a gateway 401 is a credential check (info); a 403 is a refusal', () => {
+  clearRuns();
+  const lines = captureLines();
+  const runId = 'run-test-401-0001';
+  recordGatewayReply({ runId, mode: 'mock', step: 'gateway-control', app: 'federated-agent', status: 401, body: {} });
+  recordGatewayReply({ runId, mode: 'mock', step: 'gateway-passthrough', app: 'federated-rs', status: 403, body: {} });
+  setDecisionWriter((l) => console.log(l));
+  return recordFor('mock', runId).then((rec) => {
+    assert.deepEqual(rec.rows.filter((x) => x.layer === 'gateway').map((x) => x.outcome), ['info', 'refused']);
+    assert.match(lines[0], /result=unclear/);
+    assert.match(lines[1], /result=stopped/);
+  });
+});
+
+test('runs that never reach the control step do not fill the kept list: the newest run is kept, the oldest dropped', async () => {
+  clearRuns();
+  setDecisionWriter(() => {});
+  for (let i = 0; i < 21; i += 1) recordMint({ runId: `run-test-cap-${String(i).padStart(4, '0')}`, mode: 'mock', message: 'issued' });
+  assert.ok(await recordFor('mock', 'run-test-cap-0020'), 'the newest run is kept');
+  assert.equal(await recordFor('mock', 'run-test-cap-0000'), null, 'the oldest run is the one dropped');
+  setDecisionWriter((l) => console.log(l));
+});
+
+test('a mint that is not configured begins no run and says so in its answer', async () => {
+  setMode('real'); clearRuns();
+  setDecisionWriter(() => {});
+  await withServer(async (base) => {
+    const r = await post(base, '/api/idp/token', {}, { 'x-run-id': 'run-test-mint-0001' });
+    assert.equal(r.status, 409);
+    assert.equal((await r.json()).run_began, false);
+    assert.equal(hasRun('real', 'run-test-mint-0001'), false);
+  });
+  setMode('mock');
+  setDecisionWriter((l) => console.log(l));
+});
+
+const ROOT_FILES = (dir) => fs.readdirSync(dir, { withFileTypes: true })
+  .flatMap((e) => (e.isDirectory() ? ROOT_FILES(path.join(dir, e.name)) : [path.join(dir, e.name)]));
+// The only files that may carry a RUN_OBS_ name: the core (one named exemption) and the vendored panel files that test it. Each is named in CLAUDE.md.
+const RUN_OBS_FILES = ['server/src/runObservability.js', 'web/src/run-observability/fixtures.js', 'web/src/run-observability/run-observability.test.jsx'];
+
+test('RUN_OBS_ names appear only in the named vendored files, never in lab code', () => {
+  const hits = [...ROOT_FILES(path.join(ROOT, 'server', 'src')), ...ROOT_FILES(path.join(ROOT, 'web', 'src'))]
+    .filter((f) => fs.readFileSync(f, 'utf8').includes('RUN_OBS_'))
+    .map((f) => path.relative(ROOT, f).split(path.sep).join('/'))
+    .sort();
+  assert.deepEqual(hits, [...RUN_OBS_FILES].sort());
+});
+
+test('CLAUDE.md names those exempt files and does not claim there is no RUN_OBS_ name', () => {
+  const claude = fs.readFileSync(path.join(ROOT, 'CLAUDE.md'), 'utf8');
+  assert.doesNotMatch(claude, /no RUN_OBS_/);
+  for (const f of RUN_OBS_FILES) assert.ok(claude.includes(f), `CLAUDE.md names ${f}`);
 });

@@ -8,6 +8,7 @@ import { getMode, setMode } from './mode.js';
 import { realConfig, realHowTo, publicInfo, mintRealToken, holdToken, callGateway, passthroughVerdict, resolveBearer } from './realGateway.js';
 import { connectionSource, formDefaults, saveConnection, forgetConnection, secretHint, savedSecret } from './realStore.js';
 import { mockTrace, realTrace, realFailureTrace } from './trace.js';
+import { recordMint, recordGatewayReply, recordGatewayNoReply, stepFrom, recordFor, hasRun, validRunId, clearRuns } from './runLog.js';
 import { install as installNetguard, report as netguardReport, assertMockZeroOutbound } from './netguard.js';
 import { listDiagrams, getDiagram } from './diagrams.js';
 import { callUpstream } from './upstream.js';
@@ -112,12 +113,14 @@ export function createApp() {
   app.get('/api/idp/meta', (req, res) => res.json(idpMeta));
   app.post('/api/idp/token', async (req, res) => {
     const { scope, resource, corrupt } = req.body || {};
+    const rid = req.get('x-run-id'); // set only by the page's Run flow; absent means no run
     if (getMode() === 'real') {
       // Real PingFederate. The token stays on the server; the browser gets an opaque handle + decoded claims.
       const cfg = realConfig();
       if (!cfg.ok) return jsonError(res, 'real_not_configured', realHowTo(cfg), 409);
       try {
         const m = await mintRealToken(cfg, { scope, corrupt });
+        recordMint({ runId: rid, mode: 'real', message: 'PingFederate issued the agent a token (kept on the server)' });
         // The wrong-audience case only means something if the IdP answered with another audience. Where the client's default
         // token manager IS the agent's (the cmuir-pf test client), the token is the good one: say so instead of showing a "wrong" token that is right.
         const notice = corrupt === 'wrong-audience' && [].concat(m.claims?.aud ?? []).includes(m.audience)
@@ -126,14 +129,19 @@ export function createApp() {
         return res.json({ token: holdToken(m.token), held: true, claims: m.claims, audience: m.audience, labelled: `real ${cfg.idpName} token (kept on the server)`, ...(notice && { notice }),
           // Demo-only, off by default: WI_SHOW_REAL_TOKEN=1 sends the minted token to the page so step 1 can show it.
           ...(process.env.WI_SHOW_REAL_TOKEN === '1' && { rawToken: m.token }) });
-      } catch (e) { return jsonError(res, e.code || 'idp_error', e.message); }
+      } catch (e) {
+        if (e.code === 'idp_refused') recordMint({ runId: rid, mode: 'real', message: 'PingFederate refused to issue the agent a token' });
+        return jsonError(res, e.code || 'idp_error', e.message);
+      }
     }
     if (corrupt === 'wrong-audience') {
       // Simulate the classic failure: token served by the DEFAULT token manager (aud = enduser-style)
       const t = mintToken({ scope, resource: 'https://other-system.invalid/aud' });
+      recordMint({ runId: rid, mode: 'mock', message: 'The mock IdP issued the agent a workload token' });
       return res.json({ token: t.token, claims: t.claims, labelled: 'mock — wrong audience on purpose' });
     }
     const t = mintToken({ scope, resource, corrupt });
+    recordMint({ runId: rid, mode: 'mock', message: 'The mock IdP issued the agent a workload token' });
     res.json({ token: t.token, claims: t.claims, labelled: 'mock-issued token (education: raw token shown)' });
   });
   app.post('/api/idp/decode', (req, res) => {
@@ -144,6 +152,8 @@ export function createApp() {
 
   // Gateway door: the in-process mock, or (Real mode) the actual Privilege gateway
   app.post('/api/gateway/:app/mcp', async (req, res) => {
+    const rid = req.get('x-run-id'); // absent means no run
+    const step = stepFrom(req.get('x-run-step'));
     const auth = String(req.headers.authorization || '');
     const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
     if (getMode() === 'real') {
@@ -153,17 +163,20 @@ export function createApp() {
       if (!appName) return jsonError(res, 'unknown_app', `no gateway app mapped for ${req.params.app}`, 404);
       try {
         const out = await callGateway(cfg, appName, token, req.body);
+        recordGatewayReply({ runId: rid, mode: 'real', step, app: req.params.app, status: out.status, body: out.body });
         const _meta = { source: 'real', log: out.log, stage: out.stage, detail: out.detail, gatewayUrl: out.url, requestId: out.requestId, at: out.at };
         if (req.params.app === 'federated-rs' && out.status === 200) _meta.unchanged = passthroughVerdict(token, out.body);
         _meta.trace = realTrace({ url: out.url, bearer: token, resolve: resolveBearer, rpc: req.body, out, unchanged: _meta.unchanged });
         return res.status(out.status).json({ ...out.body, _meta });
       } catch (e) {
         // Rule 23: a named failure, with the same _meta shape the page already reads
+        recordGatewayNoReply({ runId: rid, mode: 'real', step });
         const trace = realFailureTrace({ url: `${cfg.gateway}/${appName}/mcp`, bearer: token, resolve: resolveBearer, rpc: req.body, error: e.message });
         return res.status(502).json({ error: e.code || 'upstream_error', message: e.message, _meta: { source: 'real', stage: e.code || 'upstream_error', detail: e.message, log: e.message, trace } });
       }
     }
     const out = mcpCall(token, req.body);
+    recordGatewayReply({ runId: rid, mode: 'mock', step, app: req.params.app, status: out.http, body: out.body });
     res.status(out.http).json({ ...out.body, _meta: { lane: 'gateway', log: out.log, stage: out.stage, detail: out.detail, claims: out.claims, trace: mockTrace({ app: req.params.app, token, rpc: req.body, out }) } });
   });
 
@@ -194,7 +207,27 @@ export function createApp() {
   app.get('/api/runs', (req, res) => res.json({ runs }));
 
   // Reset (API + script)
-  app.post('/api/reset', (req, res) => { runs.length = 0; res.json({ ok: true, reset: true }); });
+  app.post('/api/reset', (req, res) => { runs.length = 0; clearRuns(); res.json({ ok: true, reset: true }); });
+
+  // The run's record (rule 27). Only the current mode's runs answer: a Mock run is never shown as a Real one.
+  app.get('/api/observability/:runId', async (req, res) => {
+    const id = req.params.runId;
+    if (!validRunId(id)) return res.status(400).json({ error: 'bad_run_id', message: 'A run id is 8 to 64 letters, digits or hyphens.' });
+    const mode = getMode();
+    try {
+      const record = await recordFor(mode, id);
+      if (!record) {
+        const other = mode === 'real' ? 'mock' : 'real';
+        const message = hasRun(other, id) ? `This run was recorded in ${other === 'real' ? 'Real' : 'Mock'} mode. Switch the page to that mode to see it.` : 'No run with that id is kept in this mode.';
+        return res.status(404).json({ error: hasRun(other, id) ? 'other_mode' : 'not_found', message });
+      }
+      res.json(record);
+    } catch (e) {
+      console.error(`observability: record not built (${e?.code || 'error'})`);
+      res.status(e?.status || 500).json({ error: e?.code || 'record_error', message: 'The run record could not be built.' });
+    }
+  });
+  app.all('/api/observability/:runId', (req, res) => { res.set('Allow', 'GET'); res.status(405).json({ error: 'method_not_allowed', message: 'GET only.' }); });
 
   // Netguard evidence (mock mode must show zero outbound)
   app.get('/api/netguard', (req, res) => res.json({ ...assertMockZeroOutbound(), log: netguardReport() }));

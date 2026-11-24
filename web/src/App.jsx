@@ -7,6 +7,7 @@ import Diagram from './components/Diagram.jsx';
 import JsonPane from './components/JsonPane.jsx';
 import JwtBox from './components/JwtBox.jsx';
 import GatewayTrace from './components/GatewayTrace.jsx';
+import RunObservability from './run-observability/RunObservability.jsx';
 
 const api = async (path, body, extraHeaders = {}) => {
   const res = await fetch(path, body === undefined
@@ -18,6 +19,16 @@ const api = async (path, body, extraHeaders = {}) => {
 
 // The gateway's lifetime check reads `exp`; iss, aud, sub, act, client_id and scope (its other checks) are hot by default.
 const CLAIMS_HOT = ['exp'];
+
+// Where each product's logs live and where they stream (rule 27). This lab reads no logs; the README says the same.
+const OBS_STREAMS = [
+  { product: 'PingFederate', lives: 'container stdout (only server.log and init.log reach stdout; audit.log is not shipped)', streams: 'the collector to ping-logs-pingfederate, then a SIEM' },
+  { product: 'Privilege agent gateway', lives: 'cyonproxy.log in its log volume (local), or the SIEM index ping-siem-events-v2 (hosted)', streams: 'the collector file source to ping-logs-privilege-gateway, then the Privilege SIEM export' },
+  { product: 'this lab', lives: 'one stdout line per gateway decision, with the same time as its row', streams: 'not shipped by this lab' },
+];
+
+// One id per Run press; the server keeps this run's record under it (letters, digits and hyphens).
+const newRunId = () => (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
 
 const MOCK_SCOPE = 'openid federated:read whoami:read';
 const DIRECT_ONLY_TOOLS = ['GrantAdminTool', 'DeleteAllTool'];
@@ -78,6 +89,8 @@ export default function App() {
   const [form, setForm] = useState({ gatewayUrl: '', pfUrl: '', clientId: '', clientSecret: '' });
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState('');
+  const [record, setRecord] = useState(null); // this run's record (rule 27), read back from the server
+  const [recordError, setRecordError] = useState('');
 
   const loadRuns = useCallback(async () => {
     const { json } = await api('/api/runs');
@@ -114,7 +127,18 @@ export default function App() {
   };
 
   // Results belong to the mode that produced them: a Real run must never be shown under the Simulated caption
-  const clearResults = () => { setClaims(null); setToken(null); setTokenHeld(false); setRawToken(null); setGatewayResult(null); setWhoami(null); setControl(null); setTraces([]); setDirectResult(null); setDirectWhoami(null); setBreakResult(null); };
+  const clearResults = () => { setClaims(null); setToken(null); setTokenHeld(false); setRawToken(null); setGatewayResult(null); setWhoami(null); setControl(null); setTraces([]); setDirectResult(null); setDirectWhoami(null); setBreakResult(null); setRecord(null); setRecordError(''); };
+
+  // The run's record, in the page's current mode. A non-record answer is an alert, never the empty state.
+  const loadRecord = async (id) => {
+    try {
+      const { status, json } = await api(`/api/observability/${encodeURIComponent(id)}`);
+      if (status === 200 && json && json.runId === id && Array.isArray(json.rows)) { setRecord(json); setRecordError(''); return; }
+      setRecord(null); setRecordError(json?.message || `The run record could not be read (HTTP ${status}).`);
+    } catch {
+      setRecord(null); setRecordError('The run record could not be read.');
+    }
+  };
 
   const switchMode = async (next) => {
     setError('');
@@ -171,13 +195,17 @@ export default function App() {
 
   const runDemo = async (scopeToUse = scope, pathToUse = path) => {
     setBusy(true); setError(''); setNotice('');
-    setClaims(null); setToken(null); setTokenHeld(false); setRawToken(null); setGatewayResult(null); setWhoami(null); setControl(null); setTraces([]); setDirectResult(null); setDirectWhoami(null); setBreakResult(null);
+    setClaims(null); setToken(null); setTokenHeld(false); setRawToken(null); setGatewayResult(null); setWhoami(null); setControl(null); setTraces([]); setDirectResult(null); setDirectWhoami(null); setBreakResult(null); setRecord(null); setRecordError('');
+    // The gateway path is recorded (rule 27); the direct comparison is not, so it sends no run id.
+    const runId = pathToUse === 'direct' ? null : newRunId();
+    const idOnly = runId ? { 'x-run-id': runId } : {};
+    const stepHeaders = (step) => (runId ? { 'x-run-id': runId, 'x-run-step': step } : {});
     const addTrace = (step, title, r) => {
       if (r.json?._meta?.trace) setTraces(prev => [...prev, { step, title, status: r.status, trace: r.json._meta.trace }]);
     };
     try {
       // Step 1: mint
-      const mint = await api('/api/idp/token', { scope: scopeToUse, corrupt: corrupt || undefined });
+      const mint = await api('/api/idp/token', { scope: scopeToUse, corrupt: corrupt || undefined }, idOnly);
       if (mint.status !== 200) {
         // Real mode: PingFederate (or the config) said no. Name it and stop; there is no token to send.
         const why = mint.json.message || `The token request failed (HTTP ${mint.status})`;
@@ -209,7 +237,7 @@ export default function App() {
       // Step 2: gateway tools/list
       const gw = await api('/api/gateway/federated-agent/mcp',
         { jsonrpc: '2.0', id: 1, method: 'tools/list' },
-        { authorization: `Bearer ${mint.json.token}` });
+        { authorization: `Bearer ${mint.json.token}`, ...stepHeaders('gateway-tools-list') });
       setGatewayResult({ status: gw.status, json: gw.json });
       addTrace(2, 'Gateway check: tools/list', gw);
       await logRun('2 tools/list', gw.status === 200, gw.status === 200
@@ -218,7 +246,7 @@ export default function App() {
       // Step 3: whoami passthrough
       const w = await api('/api/gateway/federated-rs/mcp',
         { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'whoami', arguments: {} } },
-        { authorization: `Bearer ${mint.json.token}` });
+        { authorization: `Bearer ${mint.json.token}`, ...stepHeaders('gateway-passthrough') });
       setWhoami({ status: w.status, json: w.json });
       addTrace(3, 'Pass Agent Token: whoami', w);
       const verdict = w.json?._meta?.unchanged; // Real mode: true/false/null, from comparing the claims
@@ -231,13 +259,14 @@ export default function App() {
       // Step 4: control
       const c = await api('/api/gateway/federated-agent/mcp',
         { jsonrpc: '2.0', id: 3, method: 'tools/list' },
-        { authorization: 'Bearer garbage-token-not-real' });
+        { authorization: 'Bearer garbage-token-not-real', ...stepHeaders('gateway-control') });
       setControl(c.status);
       addTrace(4, 'Control: garbage bearer', c);
       await logRun('4 control', c.status === 401, `garbage bearer -> ${c.status}`);
     } catch (e) {
       setError(String(e.message || e));
     } finally {
+      if (runId) await loadRecord(runId);
       setBusy(false);
     }
   };
@@ -505,6 +534,13 @@ export default function App() {
           <div className="wi-card wi-card-wide">
             <h2><span className="step-num" aria-hidden="true">4</span>Gateway trace</h2>
             <GatewayTrace exchanges={traces} source={mode} />
+          </div>
+
+          <div className="wi-card wi-card-wide">
+            {recordError && <div className="lab-error" role="alert" data-testid="obs-error">{recordError}</div>}
+            {record && <RunObservability record={record} source={mode} streams={OBS_STREAMS} />}
+            {!record && !recordError && <p className="muted">Press Run to record what each layer logged for the run.</p>}
+            <p className="muted">Counts are rows, not calls. The record covers the four gateway steps of Run the flow; the direct comparison and Break it are not recorded.</p>
           </div>
 
           <div className="duo">

@@ -80,6 +80,26 @@ subject=<sub>` with no `policy denied` beside it, plus the console objects the p
 Privilege" section lists (the Non-Human Identity, the agent in the Agent Registry, the Pass Agent
 Token MCP app). Mock mode leaves nothing in Privilege by design.
 
+## What each layer logged for this run (rule 27)
+Under **Run the flow** the page shows one run in six layers: person, agent, Authorize, Privilege, agent gateway and resource
+server. The panel is the shared `web/src/run-observability/` (vendored, pinned). The record is built by the server
+(`server/src/runLog.js`) from the four gateway steps of the run; the direct comparison and Break it are not recorded.
+
+- **Where the logs live.** This lab reads no logs. Its own record comes from the replies it got (Real) or the mock's own
+  computation (Mock). Each gateway decision also writes one stdout line of the lab's own, with the same time as its row.
+  The products' logs: PingFederate writes to container stdout (only `server.log` and `init.log` reach stdout; `audit.log`
+  is not shipped); the Privilege agent gateway writes `cyonproxy.log` to a volume (local) or the SIEM index
+  `ping-siem-events-v2` (hosted). Where they stream: the shared collector to `ping-logs-*` and the Privilege SIEM export.
+- **Mock rows are `simulated`** (the mock computed them). **Real rows are `response`** (the reply PingFederate or the
+  gateway gave the lab). Nothing is shown as read from a log.
+- **Not logged, and why.** Person: this lab signs no person in (the agent authenticates as itself). Authorize: this lab
+  does not call PingOne Authorize. Privilege: the gateway answers one reply per call and the Privilege policy log is not
+  read, so the gateway's answer is shown under **Agent gateway** and Privilege stays not logged. Resource server (Real):
+  the MCP backend's own log is not read; its answer comes back through the gateway call.
+- **Decisions.** Only a gateway's allow or refusal is a decision. Issuance is info. A call that got no reply (no
+  connection or a timeout) has no row; its stdout line says `result=no-reply`.
+- **Time = when the lab recorded it** (the same time as the row and the stdout line), not a product's own time.
+
 ## The real-world reference
 Verified live 2026-11-13 against SE PingFederate + Privilege (see AI-DEMO2
 `privilege/GATEWAY-WORKLOAD-IDENTITY-SETUP.md`, merged PR #3583): PF-issued token

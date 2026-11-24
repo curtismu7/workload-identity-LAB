@@ -31,6 +31,9 @@ Toggle lives in the TopMenu; POST /api/mode switches at runtime.
 - Loopback-only bind, Host check, same-origin writes — see server/src/app.js.
 - The vendored web/src/top-menu/* must stay byte-identical to AI-DEMO-Standalone/shared/top-menu (pin file beside it).
 - Mock mode must keep netguard attempts at 0 — test-pinned.
+- The "What each layer logged" panel (web/src/run-observability/, server/src/runObservability.js, scripts/run-observability-checkPin.mjs)
+  is vendored from AI-DEMO-Standalone `shared/run-observability/`: never hand-edit it; change the canonical, then re-vendor. The lab
+  reads no logs, so there is no RUN_OBS_* name anywhere (test-pinned). The record is built in server/src/runLog.js.
 - The "What Privilege did" panel (web/src/components/GatewayTrace.jsx; data built in server/src/trace.js) is the reusable
   request / response / decisions view for every Privilege demo; its data contract is the header of that file. The real gateway
   returns no per-check detail, so Real-mode decisions stay labelled `inferred` (or `observed`): never present a check the

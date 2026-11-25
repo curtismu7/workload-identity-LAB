@@ -52,6 +52,16 @@ export function createApp() {
     if (!d) return res.status(404).json({ error: 'not_found', message: `no diagram named ${req.params.id}` });
     res.json(d);
   });
+  // Test-suite port verification (opt-in via WI_VERIFY_PORT): the verifier fetches
+  // /api/__port-verify and this app echoes the marker back, proving the fetch reached
+  // THIS server and not a foreign listener the OS shared the port with.
+  app.get('/api/__port-verify', (req, res) => {
+    const m = String(req.get('x-wi-port-verify') || '');
+    if (!process.env.WI_VERIFY_PORT) return res.status(404).json({ error: 'not_found' });
+    res.setHeader('x-wi-port-verify', m);
+    res.json({ marker: m });
+  });
+
   app.get('/api/health', (req, res) => res.json({ ok: true, contract: 'demo-health/1', app: 'workload-identity-lab' }));
   app.get('/api/info', (req, res) => {
     const cfg = realConfig();

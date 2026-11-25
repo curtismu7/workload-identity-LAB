@@ -7,7 +7,7 @@ import dns from 'node:dns';
 import { createApp } from '../server/src/app.js';
 import { parseGatewayBody, passthroughVerdict, holdToken, realConfig, mintRealToken, IDP_PROFILES } from '../server/src/realGateway.js';
 import { report as netguardReport, assertMockZeroOutbound } from '../server/src/netguard.js';
-import { stop } from './test-helpers.js';
+import { stop, startVerified } from './test-helpers.js';
 
 const SECRET = 'fake-client-secret-DO-NOT-LEAK';
 const b64u = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -61,8 +61,11 @@ async function withReal(fn, { pfReply, defaultIsAgent } = {}) {
   Object.assign(process.env, {
     WI_REAL_GATEWAY_URL: url(gw), WI_REAL_PF_URL: url(pf), WI_REAL_CLIENT_ID: 'pf-client', WI_REAL_CLIENT_SECRET: SECRET,
   });
-  const srv = createApp().listen(0);
-  await new Promise(r => srv.once('listening', r));
+  const srv = await startVerified(async () => {
+    const s = createApp().listen(0);
+    await new Promise(r => s.once('listening', r));
+    return s;
+  });
   const base = `http://127.0.0.1:${srv.address().port}`;
   const post = async (path, body, headers = {}) => {
     const r = await fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
@@ -82,8 +85,11 @@ const WHOAMI = { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'w
 
 test('real mode refuses to switch on, and names every missing variable', async () => {
   clearEnv();
-  const srv = createApp().listen(0);
-  await new Promise(r => srv.once('listening', r));
+  const srv = await startVerified(async () => {
+    const s = createApp().listen(0);
+    await new Promise(r => s.once('listening', r));
+    return s;
+  });
   const base = `http://127.0.0.1:${srv.address().port}`;
   try {
     const r = await fetch(base + '/api/mode', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ source: 'real' }) });

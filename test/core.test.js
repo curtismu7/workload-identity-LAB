@@ -1,12 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../server/src/app.js';
-import { stop } from './test-helpers.js';
+import { stop, startVerified } from './test-helpers.js';
 
 async function withServer(fn) {
-  const app = createApp();
-  const srv = app.listen(0);
-  await new Promise(r => srv.once('listening', r));
+  const srv = await startVerified(async () => {
+    const s = createApp().listen(0);
+    await new Promise(r => s.once('listening', r));
+    return s;
+  });
   const base = `http://127.0.0.1:${srv.address().port}`;
   try { await fn(base); } finally { await stop(srv); }
 }

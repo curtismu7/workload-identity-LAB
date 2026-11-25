@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { createApp } from '../server/src/app.js';
-import { stop } from './test-helpers.js';
+import { stop, startVerified } from './test-helpers.js';
 
 const b64u = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
 const listen = (handler) => new Promise(r => { const s = http.createServer(handler); s.listen(0, '127.0.0.1', () => r(s)); });
@@ -22,8 +22,11 @@ async function withStubs(sessionId, fn) {
     res.end(JSON.stringify({ jsonrpc: '2.0', id: rpc.id, result: { tools: [{ name: 'ListIndexTool' }] } }));
   });
   Object.assign(process.env, { WI_REAL_GATEWAY_URL: url(gw), WI_REAL_PF_URL: url(pf), WI_REAL_CLIENT_ID: 'c', WI_REAL_CLIENT_SECRET: randomBytes(8).toString('hex') });
-  const srv = createApp().listen(0);
-  await new Promise(r => srv.once('listening', r));
+  const srv = await startVerified(async () => {
+    const s = createApp().listen(0);
+    await new Promise(r => s.once('listening', r));
+    return s;
+  });
   const base = `http://127.0.0.1:${srv.address().port}`;
   const post = async (path, body, headers = {}) => {
     const r = await fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });

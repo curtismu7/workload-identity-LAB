@@ -5,3 +5,6 @@ web/dist/
 
 # Filled live environments hold real settings: never commit them.
 postman/*.live.environment.json
+
+# Local-only diagnostic evidence from the 2026-11-24/25 flake investigation (see HANDOFF-2026-11-24-workload-flake.md)
+.flake-evidence/

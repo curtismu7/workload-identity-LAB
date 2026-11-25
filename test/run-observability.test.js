@@ -9,17 +9,19 @@ import { setMode } from '../server/src/mode.js';
 import { setDecisionWriter, recordMint, recordGatewayReply, recordGatewayNoReply, recordFor, clearRuns, hasRun } from '../server/src/runLog.js';
 import { assertRunObservability } from '../server/src/runObservability.js';
 import { checkPin } from '../scripts/run-observability-checkPin.mjs';
+import { stop, startVerified } from './test-helpers.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MATCHER_WORDS = /refused|denied|rejected|forbidden|failed|invalid|expired|mismatch|token|audience|scope|served/i;
 
-function withServer(fn) {
-  return new Promise((resolve, reject) => {
-    const s = createApp().listen(0, '127.0.0.1', async () => {
-      const base = `http://127.0.0.1:${s.address().port}`;
-      try { await fn(base); resolve(); } catch (e) { reject(e); } finally { s.close(); }
-    });
+async function withServer(fn) {
+  const s = await startVerified(async () => {
+    const srv = createApp().listen(0, '127.0.0.1');
+    await new Promise(r => srv.once('listening', r));
+    return srv;
   });
+  const base = `http://127.0.0.1:${s.address().port}`;
+  try { await fn(base); } finally { await stop(s); }
 }
 
 const post = (base, p, body, headers = {}) => fetch(base + p, {

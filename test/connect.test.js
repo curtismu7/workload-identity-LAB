@@ -10,6 +10,7 @@ import path from 'node:path';
 import { createApp } from '../server/src/app.js';
 import { getMode } from '../server/src/mode.js';
 import { forgetConnection } from '../server/src/realStore.js';
+import { stop, startVerified } from './test-helpers.js';
 
 const SECRET = 'fake-client-secret-DO-NOT-LEAK';
 const ENV_KEYS = ['WI_REAL_GATEWAY_URL', 'WI_REAL_PF_URL', 'WI_REAL_CLIENT_ID', 'WI_REAL_CLIENT_SECRET', 'WI_REAL_MODE'];
@@ -28,8 +29,11 @@ async function withApp(fn, { configDir } = {}) {
     res.writeHead(ok ? 200 : 401, { 'content-type': 'application/json' });
     res.end(JSON.stringify(ok ? { access_token: 'opaque-reference-token', token_type: 'Bearer' } : { error: 'invalid_client', error_description: 'bad credentials' }));
   });
-  const srv = createApp().listen(0);
-  await new Promise(r => srv.once('listening', r));
+  const srv = await startVerified(async () => {
+    const s = createApp().listen(0);
+    await new Promise(r => s.once('listening', r));
+    return s;
+  });
   const base = `http://127.0.0.1:${srv.address().port}`;
   const post = async (p, body) => {
     const r = await fetch(base + p, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) });
@@ -43,7 +47,7 @@ async function withApp(fn, { configDir } = {}) {
   } finally {
     await post('/api/mode', { source: 'mock' });
     forgetConnection();
-    srv.close(); pf.close();
+    await stop(srv); await stop(pf);
     ENV_KEYS.forEach(k => delete process.env[k]);
     delete process.env.WI_CONFIG_DIR;
   }
@@ -110,7 +114,7 @@ test('a client PingFederate refuses is named and nothing is saved', async () => 
 
 test('an unreachable PingFederate is named, the mode is put back, and nothing is saved', async () => {
   await withApp(async ({ post, json, form, file }) => {
-    const dead = await listen(() => {}); const deadUrl = url(dead); await new Promise(r => dead.close(r));
+    const dead = await listen(() => {}); const deadUrl = url(dead); await stop(dead);
     const r = await post('/api/real/connect', form({ pfUrl: deadUrl }));
     assert.equal(r.status, 502);
     assert.match(json(r).message, /unreachable|network error/);

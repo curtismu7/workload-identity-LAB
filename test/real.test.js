@@ -7,6 +7,7 @@ import dns from 'node:dns';
 import { createApp } from '../server/src/app.js';
 import { parseGatewayBody, passthroughVerdict, holdToken, realConfig, mintRealToken, IDP_PROFILES } from '../server/src/realGateway.js';
 import { report as netguardReport, assertMockZeroOutbound } from '../server/src/netguard.js';
+import { stop, startVerified } from './test-helpers.js';
 
 const SECRET = 'fake-client-secret-DO-NOT-LEAK';
 const b64u = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -60,8 +61,11 @@ async function withReal(fn, { pfReply, defaultIsAgent } = {}) {
   Object.assign(process.env, {
     WI_REAL_GATEWAY_URL: url(gw), WI_REAL_PF_URL: url(pf), WI_REAL_CLIENT_ID: 'pf-client', WI_REAL_CLIENT_SECRET: SECRET,
   });
-  const srv = createApp().listen(0);
-  await new Promise(r => srv.once('listening', r));
+  const srv = await startVerified(async () => {
+    const s = createApp().listen(0);
+    await new Promise(r => s.once('listening', r));
+    return s;
+  });
   const base = `http://127.0.0.1:${srv.address().port}`;
   const post = async (path, body, headers = {}) => {
     const r = await fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
@@ -72,7 +76,7 @@ async function withReal(fn, { pfReply, defaultIsAgent } = {}) {
     await fn({ post, seen, gwUrl: url(gw), pfUrl: url(pf) });
   } finally {
     await post('/api/mode', { source: 'mock' });
-    srv.close(); pf.close(); gw.close(); clearEnv();
+    await stop(srv); await stop(pf); await stop(gw); clearEnv();
   }
 }
 
@@ -81,8 +85,11 @@ const WHOAMI = { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'w
 
 test('real mode refuses to switch on, and names every missing variable', async () => {
   clearEnv();
-  const srv = createApp().listen(0);
-  await new Promise(r => srv.once('listening', r));
+  const srv = await startVerified(async () => {
+    const s = createApp().listen(0);
+    await new Promise(r => s.once('listening', r));
+    return s;
+  });
   const base = `http://127.0.0.1:${srv.address().port}`;
   try {
     const r = await fetch(base + '/api/mode', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ source: 'real' }) });
@@ -93,7 +100,7 @@ test('real mode refuses to switch on, and names every missing variable', async (
     assert.equal(info.realAvailable, false);
     assert.deepEqual(info.realMissing.sort(), [...ENV_KEYS].sort());
     assert.equal(info.simulated, true);
-  } finally { srv.close(); }
+  } finally { await stop(srv); }
 });
 
 test('real config rejects a non-https gateway URL', () => {
@@ -146,7 +153,7 @@ test('the mint follows the profile: path, audience parameter and error wording',
     assert.ok(!('audience' in seen[2].form));
     await assert.rejects(() => mintRealToken(realConfig({ ...env, WI_REAL_IDP: 'p1', WI_REAL_TOKEN_PATH: '/fail' })),
       (e) => e.code === 'idp_refused' && /^PingOne refused the token request \(HTTP 400\): invalid_client$/.test(e.message));
-  } finally { idp.close(); }
+  } finally { await stop(idp); }
 });
 
 test('real flow: mint -> tools/list -> whoami passthrough -> garbage control', async () => {
@@ -295,7 +302,7 @@ test('an unreachable gateway is a named 502, not a blank result', async () => {
     // A port that was open a moment ago and is now closed (fetch refuses reserved ports like 1 outright)
     const dead = await listen(() => {});
     process.env.WI_REAL_GATEWAY_URL = url(dead);
-    await new Promise(r => dead.close(r));
+    await stop(dead);
     const gw = await post('/api/gateway/federated-agent/mcp', LIST, { authorization: `Bearer ${mint.json.token}` });
     assert.equal(gw.status, 502);
     assert.equal(gw.json.error, 'upstream_unreachable');

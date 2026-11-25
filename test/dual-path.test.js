@@ -3,13 +3,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../server/src/app.js';
+import { stop } from './test-helpers.js';
 
 async function withServer(fn) {
   const app = createApp();
   const srv = app.listen(0);
   await new Promise(r => srv.once('listening', r));
   const base = `http://127.0.0.1:${srv.address().port}`;
-  try { await fn(base); } finally { srv.close(); }
+  try { await fn(base); } finally { await stop(srv); }
 }
 const post = async (base, path, body, headers = {}) => {
   const r = await fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });

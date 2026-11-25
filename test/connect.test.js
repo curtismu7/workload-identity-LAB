@@ -10,6 +10,7 @@ import path from 'node:path';
 import { createApp } from '../server/src/app.js';
 import { getMode } from '../server/src/mode.js';
 import { forgetConnection } from '../server/src/realStore.js';
+import { stop } from './test-helpers.js';
 
 const SECRET = 'fake-client-secret-DO-NOT-LEAK';
 const ENV_KEYS = ['WI_REAL_GATEWAY_URL', 'WI_REAL_PF_URL', 'WI_REAL_CLIENT_ID', 'WI_REAL_CLIENT_SECRET', 'WI_REAL_MODE'];
@@ -43,7 +44,7 @@ async function withApp(fn, { configDir } = {}) {
   } finally {
     await post('/api/mode', { source: 'mock' });
     forgetConnection();
-    srv.close(); pf.close();
+    await stop(srv); await stop(pf);
     ENV_KEYS.forEach(k => delete process.env[k]);
     delete process.env.WI_CONFIG_DIR;
   }
@@ -110,7 +111,7 @@ test('a client PingFederate refuses is named and nothing is saved', async () => 
 
 test('an unreachable PingFederate is named, the mode is put back, and nothing is saved', async () => {
   await withApp(async ({ post, json, form, file }) => {
-    const dead = await listen(() => {}); const deadUrl = url(dead); await new Promise(r => dead.close(r));
+    const dead = await listen(() => {}); const deadUrl = url(dead); await stop(dead);
     const r = await post('/api/real/connect', form({ pfUrl: deadUrl }));
     assert.equal(r.status, 502);
     assert.match(json(r).message, /unreachable|network error/);

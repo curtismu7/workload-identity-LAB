@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { createApp } from '../server/src/app.js';
+import { stop } from './test-helpers.js';
 
 const b64u = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
 const listen = (handler) => new Promise(r => { const s = http.createServer(handler); s.listen(0, '127.0.0.1', () => r(s)); });
@@ -29,7 +30,7 @@ async function withStubs(sessionId, fn) {
     return { status: r.status, text: await r.text() };
   };
   try { await post('/api/mode', { source: 'real' }); await fn(post); }
-  finally { await post('/api/mode', { source: 'mock' }); srv.close(); pf.close(); gw.close(); KEYS.forEach(k => delete process.env[k]); }
+  finally { await post('/api/mode', { source: 'mock' }); await stop(srv); await stop(pf); await stop(gw); KEYS.forEach(k => delete process.env[k]); }
 }
 
 const LIST = { jsonrpc: '2.0', id: 1, method: 'tools/list' };

@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../server/src/app.js';
+import { stop } from './test-helpers.js';
 
 async function withServer(fn) {
   const srv = createApp().listen(0);
@@ -11,7 +12,7 @@ async function withServer(fn) {
     const r = await fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
     return { status: r.status, json: await r.json() };
   };
-  try { await fn(post); } finally { srv.close(); }
+  try { await fn(post); } finally { await stop(srv); }
 }
 const LIST = { jsonrpc: '2.0', id: 1, method: 'tools/list' };
 const door = (post, token, body = LIST, app = 'federated-agent') => post(`/api/gateway/${app}/mcp`, body, { authorization: `Bearer ${token}` });

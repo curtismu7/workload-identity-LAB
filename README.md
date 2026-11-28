@@ -74,7 +74,7 @@ The **What Privilege did** section shows, for every gateway call, the exact requ
 returned (status, headers, body) and the decisions the gateway made, in order. In Mock these are the mock
 gateway's own checks. In Real the gateway returns a status and a body but no per-check breakdown, so its
 decisions are marked *inferred from the outcome* (and Pass Agent Token *observed*, by comparing claims); the
-gateway log is the authoritative record. The banner names the real hosts; step 2 shows the gateway's HTTP status and request id. The proof is
+gateway log is the authoritative record. The Real modal names the real hosts; step 2 shows the gateway's HTTP status and request id. The proof is
 on the Privilege side: the gateway log line `workload token accepted for key <key> issuer=<iss>
 subject=<sub>` with no `policy denied` beside it, plus the console objects the page's "Show it in
 Privilege" section lists (the Non-Human Identity, the agent in the Agent Registry, the Pass Agent

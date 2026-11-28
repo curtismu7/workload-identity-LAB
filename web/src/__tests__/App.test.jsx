@@ -46,13 +46,14 @@ beforeEach(() => {
 });
 
 describe('Workload Identity Lab', () => {
-  it('renders the flow with the simulation banner', async () => {
+  it('renders the flow with the Mock modal and no simulation banner', async () => {
     render(<App />);
-    expect(await screen.findByTestId('sim-banner')).toHaveTextContent(/SIMULATED/);
+    expect(await screen.findByTestId('mode-modal')).toHaveTextContent(/in-process mocks; no real system is called/);
+    expect(screen.queryByTestId('sim-banner')).toBeNull();
     expect(screen.getByRole('heading', { name: /federated agents/i })).toBeTruthy();
   });
 
-  it('shell bar: brand, mode badge, the current page pill, the TopMenu; the banner opens <main>; one primary at a time', async () => {
+  it('shell bar: brand, mode badge, the current page pill, the TopMenu; no simulation banner; one primary at a time', async () => {
     render(<App />);
     const bar = document.querySelector('header.shell-bar');
     expect(bar).not.toBeNull();
@@ -60,7 +61,8 @@ describe('Workload Identity Lab', () => {
     expect(await screen.findByTestId('mode-badge')).toHaveTextContent('Mock');
     expect(screen.getByTestId('nav-lab')).toHaveAttribute('aria-current', 'page');
     expect(bar.querySelector('[data-testid="top-menu"]')).not.toBeNull();
-    expect(document.querySelector('main').firstElementChild).toBe(screen.getByTestId('sim-banner'));
+    expect(screen.queryByTestId('sim-banner')).toBeNull();
+    expect(document.querySelector('main').firstElementChild.tagName).toBe('H1');
     expect(document.querySelectorAll('button.primary')).toHaveLength(1);
     expect(screen.getByTestId('run-btn')).toHaveClass('primary');
   });
@@ -84,7 +86,7 @@ describe('Workload Identity Lab', () => {
     expect(screen.getByTestId('proof-mock-note')).toHaveTextContent('Click Run through Privilege (Real)');
   });
 
-  it('real mode: the banner names the hosts, the real token is never shown, the proof note names the gateway', async () => {
+  it('real mode: the modal names the hosts, the real token is never shown, the proof note names the gateway', async () => {
     const base = fetch.getMockImplementation();
     fetch.mockImplementation((url, init) => {
       if (String(url).includes('/api/info')) return Promise.resolve(mockJson(200, { source: 'real', realAvailable: true, real: { pfHost: 'pf.example.com', gatewayHost: 'gw.example.com', scopes: 'openid whoami:read' }, simulated: false }));
@@ -92,7 +94,7 @@ describe('Workload Identity Lab', () => {
       return base(url, init);
     });
     render(<App />);
-    expect(await screen.findByTestId('sim-banner')).toHaveTextContent(/REAL.*pf\.example\.com.*gw\.example\.com/);
+    expect(await screen.findByTestId('mode-modal')).toHaveTextContent(/REAL.*pf\.example\.com.*gw\.example\.com/);
     await userEvent.click(screen.getByTestId('run-btn'));
     expect(await screen.findByTestId('token-held')).toBeTruthy();
     expect(screen.queryByTestId('raw-token')).toBeNull();
@@ -390,7 +392,7 @@ describe('Workload Identity Lab', () => {
       await screen.findByTestId('token-held');
       // The run used the Real scope the moment Real was switched on, not the stale Mock one
       expect(JSON.parse(callsTo('/api/idp/token')[0][1].body).scope).toBe(REAL_SCOPES);
-      expect(await screen.findByTestId('sim-banner')).toHaveTextContent(/REAL.*pf\.example\.com/);
+      await waitFor(() => expect(screen.getByTestId('mode-modal')).toHaveTextContent(/REAL.*pf\.example\.com/));
       expect(document.body.textContent).not.toContain(SECRET);
       expect(document.body.innerHTML).not.toContain(SECRET);
     });
@@ -516,7 +518,7 @@ describe('Workload Identity Lab', () => {
       expect(screen.queryByTestId('claims-view')).toBeNull();
       expect(screen.getByTestId('gateway-trace-empty')).toBeTruthy(); // nothing left to be mislabelled Simulated
       expect(callsTo('/api/real/forget')).toHaveLength(1);
-      expect(await screen.findByTestId('sim-banner')).toHaveTextContent(/SIMULATED/);
+      await waitFor(() => expect(screen.getByTestId('mode-modal')).toHaveTextContent(/MOCK.*in-process mocks/));
     });
   });
 });

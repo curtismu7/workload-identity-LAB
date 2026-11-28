@@ -8,6 +8,7 @@ import JsonPane from './components/JsonPane.jsx';
 import JwtBox from './components/JwtBox.jsx';
 import GatewayTrace from './components/GatewayTrace.jsx';
 import RunObservability from './run-observability/RunObservability.jsx';
+import ModeModal from './mode-modal/ModeModal.jsx';
 
 const api = async (path, body, extraHeaders = {}) => {
   const res = await fetch(path, body === undefined
@@ -52,6 +53,12 @@ const DirectWhoamiPane = ({ response }) => {
   if (!backendClaims) return null;
   return <JsonPane value={backendClaims.receivedClaims || backendClaims} testId="direct-whoami-claims" label="what the direct backend received" hot={CLAIMS_HOT} />;
 };
+
+// The Real-or-mock modal's lines (replaces the old simulation banner). REAL names the real hosts, as the banner did.
+export const modeLines = (info) => ({
+  mock: 'The IdP, gateway and MCP backend on this page are in-process mocks; no real system is called. Mock-issued tokens are labelled.',
+  real: `The token is minted by ${info?.real?.pfHost || 'PingFederate'} and every call goes to the Privilege gateway at ${info?.real?.gatewayHost || 'the configured host'}. The client secret stays on the server and is never sent to the browser.`,
+});
 
 export default function App() {
   const [info, setInfo] = useState(null);
@@ -340,11 +347,6 @@ export default function App() {
         </TopMenu>
       </header>
       <main className="lab-main">
-        <div className="sim-banner" data-testid="sim-banner">
-          {mode === 'mock'
-            ? 'SIMULATED — the IdP, gateway and MCP backend on this page are in-process mocks; no real system is called. Mock-issued tokens are labelled.'
-            : `REAL — the token is minted by ${info?.real?.pfHost || 'PingFederate'} and every call goes to the Privilege gateway at ${info?.real?.gatewayHost || 'the configured host'}. The client secret stays on the server and is never sent to the browser.`}
-        </div>
         <h1>Federated agents: workload identity through the gateway</h1>
         <p className="lab-lead">
           The agent holds <strong>no gateway secret</strong>. Its own identity platform vouches for it
@@ -645,6 +647,7 @@ export default function App() {
           </div>
         </section>
       </main>
+      <ModeModal key="mode-modal" mode={mode} lines={modeLines(info)} suppress={!info} storageKey="wi-mode" />
       <TalkTrackDialog isOpen={talkOpen} onClose={() => setTalkOpen(false)} talk={talkSteps} />
     </>
   );

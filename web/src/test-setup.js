@@ -1,4 +1,8 @@
 import '@testing-library/jest-dom/vitest';
+import { afterEach } from 'vitest';
+
+// Once a test dismisses the Real-or-mock modal, later tests must find it again.
+afterEach(() => { try { sessionStorage.clear(); } catch { /* storage blocked */ } });
 
 // jsdom has no matchMedia; App's theme effect calls it
 if (!window.matchMedia) {
